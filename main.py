@@ -59,7 +59,7 @@ import numpy as np
 
 # define a dateTime
 date_base = datetime.datetime.now(pytz.UTC)
-date_base = datetime.datetime(2000, 12, 21,12,tzinfo=pytz.UTC)
+date_base = datetime.datetime(2000, 3, 21,12,tzinfo=pytz.UTC)
 date = [date_base + datetime.timedelta(days=i) for i in range(0,182)]
 
 # define a observers Point
@@ -75,19 +75,29 @@ import math
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-# generate scale
-radius = 0.2 #meter
-Nmins=12*60 # number of minutes on scale
-t=np.linspace(0, math.pi, num=Nmins) # create parameters
 
+# generate scale
+radius = 0.3 #meter
+Nmins=12*60 # number of minutes on scale
+t=np.linspace(-math.pi/2, math.pi/2, num=Nmins) # create parameters
 #paremetrize half a circle
 x = radius*np.cos(t)
 y = radius*np.sin(t)
 z = np.zeros([Nmins,])
 
+
+# generate gnomon
+xg=np.array([0, 0])+x_obs
+yg=np.array([0, 0])+y_obs
+zg=np.array([0, 0 + radius])+z_obs
+
 #transpose circle so the normal vec face polar star
-r = R.from_euler('y', lat0, degrees=True)
+r = R.from_euler('z',180, degrees=True)
 xyz=r.apply(np.array([x,y,z]).transpose([1,0]))
+
+r = R.from_euler('y',lat0, degrees=True)
+
+xyz=r.apply(xyz)
 
 # translate circle to observes position
 x=xyz[:,0]+x_obs
@@ -96,9 +106,9 @@ z=xyz[:,2]+z_obs
 
 
 # generate vectors between min on scale and the sun
-min=np.floor(Nmins/2) # reference minute
+min= int(np.floor(Nmins/2)) # reference minute
 
-vectors=np.array([[x_sun-x[0]],[y_sun-y[0]],[z_sun-z[0]]])  # vector = X-X_sun
+vectors=np.array([[x_sun-x[min]],[y_sun-y[min]],[z_sun-z[min]]])  # vector = X-X_sun
 
 vectors /= np.sqrt((vectors ** 2).sum(-1))[..., np.newaxis] # norm vector
 
@@ -116,8 +126,13 @@ nz=vectors[2,].flatten()
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
 for i in range(0,nx.size-1):
-    ax.plot([x[0], x[0]+10*radius*nx[i]],[y[0], y[0]+10*radius*ny[i]],[z[0], z[0]+10*radius*nz[i]],'-')
+    ax.plot([x[min], x[min]+10*radius*nx[i]],[y[min], y[min]+10*radius*ny[i]],[z[min], z[min]+10*radius*nz[i]],'-')
 ax.plot(x,y,z,'.')
+
+#draw gnomon
+ax.plot(xg,yg,zg,'-')
+
+
 ax.axis('auto')
 #print('sun=',x_sun,y_sun,z_sun)
 
