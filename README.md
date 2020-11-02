@@ -6,5 +6,17 @@ https://de.wikipedia.org/wiki/Bernhardtsche_Walze
 ## Example
 For Stuttgart, Germany:
 
-![With Spheroids](https://github.com/pinguinonice/sundial/blob/master/docu/stuttgart.png)
+![For Stuttgart](https://github.com/pinguinonice/solardial/blob/master/docu/stuttgart.PNG)
+
+For Equator
+
+![For equator](https://github.com/pinguinonice/solardial/blob/master/docu/equator.PNG)
+
+
+
+For Pole
+
+![For Pole](https://github.com/pinguinonice/solardial/blob/master/docu/pol.PNG)
+
+
 
