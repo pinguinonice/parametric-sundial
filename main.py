@@ -359,7 +359,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 # define the observers Point
-lat0=48.7758
+lat0=0#48.7758
 lon0=9.1829
 alt0=500
 
