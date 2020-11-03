@@ -185,7 +185,7 @@ def closestDistanceBetweenLines(a0,a1,b0,b1,clampAll=False,clampA0=False,clampA1
 
 
 
-def generateSundial(lat0,lon0,alt0,radius,noonOffset):
+def generateSundial(lat0,lon0,alt0,radius,noonOffset,season):
     """
     This functions generates the gnomon and the scale for a bernard's sundial 
     It takes in account the "Equation of time" for the observation point (lat0,lon0,alt0)
@@ -197,10 +197,17 @@ def generateSundial(lat0,lon0,alt0,radius,noonOffset):
     Input:
         lat0: latitude of observation point
         lon0: longditude of observation point
-        alt0: altitude of observation point        
+        alt0: altitude of observation point
+        radius: radius of the scale
+        noonOffset: turns the scale so the "noon" tick gets into different position.
+                    tweak here if the gnomon is to thick or to thin  
+        season:'fall' generates gnomon for 21.6. - 21.12.
+               'spring' generates gnomon for 21.12. - 21.6. 
+                    
     Output:
-    minScale:
-    hourScale:
+        minScale: the Minute ticks in enu
+        hourScale: the Hour ticks in enu
+        noonTick: the 12:00h noon tick in enu
         P0: ray start points (first is gnomon axis) (coordinate referens system: east north up)
         P1: ray end points (first is gnomon axis) (coordinate referens system: east north up)
         P: gnomons points (crs: enu)
@@ -220,13 +227,15 @@ def generateSundial(lat0,lon0,alt0,radius,noonOffset):
     timeZone=tz.gettz(tf.timezone_at(lng=lon0, lat=lat0)) # returns 'Europe/Berlin'
     
     
-    print("Sundial for lat:"+str(lat0)+" and  lon:"+ str(lon0)+" in timeZone"+str(timeZone))
     # define a dateTime
     
     
     
-    #date_base = datetime.datetime.now(pytz.UTC)
-    date_base = datetime.datetime(2000, 12, 21,12,0,tzinfo=pytz.UTC)
+    if season == 'spring':
+        date_base = datetime.datetime(2000, 12, 21,12,0,tzinfo=pytz.UTC)
+    if season == 'fall':
+        date_base = datetime.datetime(2000, 6, 21,12,0,tzinfo=pytz.UTC)
+        
     date_base = date_base - timeZone.utcoffset(date_base)
     # date = [date_base + datetime.timedelta(days=i) for i in range(0,182)] # day steps
     #date = [date_base + datetime.timedelta(hours=i) for i in range(0,1)] # hour steps
@@ -243,6 +252,7 @@ def generateSundial(lat0,lon0,alt0,radius,noonOffset):
                 date.append(newdate ) #hour steps
         
     
+    print("Sundial for lat:"+str(lat0)+" and  lon:"+ str(lon0)+" in timeZone "+str(timeZone.tzname(date_base))+ " with "+season+" gnomon")
 
 
     
@@ -334,8 +344,10 @@ def generateSundial(lat0,lon0,alt0,radius,noonOffset):
     
     minScale=np.array([x,y,z]).transpose()
     hourScale=np.array([x[0::60],y[0::60],z[0::60]]).transpose()
+    noonTick=minScale[index[0],:]
     
-    return minScale,hourScale,P0,P1,P
+    
+    return minScale,hourScale,P0,P1,P,noonTick
 
 
 
@@ -347,7 +359,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 # define the observers Point
-lat0=90#48.7758
+lat0=48.7758
 lon0=9.1829
 alt0=500
 
@@ -358,10 +370,10 @@ radius = 0.1 #meter
 noonOffset=0*15
 
 
+season='fall'#'spring'
 
 
-
-minScale,hourScale,P0,P1,P=generateSundial(lat0,lon0,alt0,radius,noonOffset)
+minScale,hourScale,P0,P1,P,noonTick=generateSundial(lat0,lon0,alt0,radius,noonOffset,season)
 
 
 
@@ -376,6 +388,7 @@ for i in range(0,182):
 
 
 ax.plot(hourScale[:,0],hourScale[:,1],hourScale[:,2],'.r',markersize=10)
+ax.plot(noonTick[0],noonTick[1],noonTick[2],'.b',markersize=10)
 
 for i in range(1,24):
     ax.text(hourScale[i,0],hourScale[i,1],hourScale[i,2], str(i-1), color='red')
