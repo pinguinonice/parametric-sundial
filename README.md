@@ -4,7 +4,7 @@ a parametric sundial after Bernhardt's concept, based on lat, lon of observer
 https://de.wikipedia.org/wiki/Bernhardtsche_Walze
 
 ## Example
-For Stuttgart, Germany:
+For Stuttgart, Germany (with spring and fall gnomon):
 
 ![For Stuttgart Spring 21.12.-21.6.](https://github.com/pinguinonice/solardial/blob/master/docu/stuttgart.PNG)
 
