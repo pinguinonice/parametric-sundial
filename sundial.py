@@ -357,4 +357,20 @@ def generateSundial(lat0,lon0,alt0,radius,noonOffset,season):
 
 
 
-
+def LinePlaneCollision(planeNormal, planePoint, rayDirection, rayPoint, epsilon=1e-6):
+    """
+    Finding the intersection of an infinite ray with a plane in 3D is an important topic in collision detection.
+    
+    
+    Task
+    Find the point of intersection for the infinite ray with direction   (0, -1, -1)   passing through position   (0, 0, 10)   with the infinite plane with a normal vector of   (0, 0, 1)   and which passes through [0, 0, 5].
+    """
+     
+    ndotu = planeNormal.dot(rayDirection)
+    if abs(ndotu) < epsilon:
+        raise RuntimeError("no intersection or line is within plane")
+     
+    w = rayPoint - planePoint
+    si = -planeNormal.dot(w) / ndotu
+    Psi = w + si * rayDirection + planePoint
+    return Psi
