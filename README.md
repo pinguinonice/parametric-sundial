@@ -3,6 +3,10 @@
 a parametric sundial after Bernhardt's concept, based on lat, lon of observer
 https://de.wikipedia.org/wiki/Bernhardtsche_Walze
 
+3d printer file
+![STL](https://github.com/pinguinonice/solardial/blob/master/docu/stl.PNG)
+
+
 ## Use
 
 `minScale,hourScale,P0,P1,P,noonTick=generateSundial(lat0,lon0,alt0,radius,noonOffset,season)`
