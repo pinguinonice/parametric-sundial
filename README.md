@@ -4,7 +4,7 @@ a parametric sundial after Bernhardt's concept, based on lat, lon of observer
 https://de.wikipedia.org/wiki/Bernhardtsche_Walze
 
 3d printer file
-![STL](https://github.com/pinguinonice/solardial/blob/master/docu/stl.PNG)
+![STL](https://github.com/pinguinonice/solardial/blob/master/docu/stl.PNG =250x250)
 
 
 ## Use
