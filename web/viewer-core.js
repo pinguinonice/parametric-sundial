@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 
 export const DEG = Math.PI / 180;
 
@@ -99,7 +100,11 @@ export function createStage(canvas) {
 
   function addPart(name, geometry, rows) {
     if (parts[name]) { scene.remove(parts[name]); parts[name].geometry.dispose(); }
-    geometry.computeVertexNormals();
+    // normals with a crease angle: flat faces and engraved edges stay crisp,
+    // the dish and the roller stay smooth (plain vertex normals smear the
+    // engraving across the big flat triangles of the base and the wings)
+    if (geometry.index) geometry = geometry.toNonIndexed();
+    geometry = BufferGeometryUtils.toCreasedNormals(geometry, Math.PI / 7);
     const kind = name.startsWith('roller') ? 'roller' : name;
     const mesh = new THREE.Mesh(geometry, materials[kind]());
     mesh.castShadow = mesh.receiveShadow = true;
