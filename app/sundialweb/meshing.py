@@ -442,6 +442,19 @@ class PlateSurface:
 
         band_w = g.tick_zone + g.text_h + 6.0
         band = RHO >= g.R_out - band_w
+        # an isolated column whose rays demand a different twist than both
+        # its neighbours would notch the fold by millimetres for the sake of
+        # a few days; within the band (never cut) such a constraint is
+        # relaxed to what its neighbours within +-RELAX_BAND_DEG allow, and
+        # the days it shadows appear in the report instead
+        if RELAX_BAND_DEG > 0:
+            kk = int(round(RELAX_BAND_DEG / d_az))
+            hi = w_max.copy(); lo = w_min.copy()
+            for sh in range(-kk, kk + 1):
+                hi = np.maximum(hi, np.roll(w_max, sh, axis=1))
+                lo = np.minimum(lo, np.roll(w_min, sh, axis=1))
+            w_max = np.where(band, hi, w_max)
+            w_min = np.where(band, lo, w_min)
         # Two-dimensional twist field w(rho, az).  Each cell allows w in
         # [0, w_max] (dish, plate under its crossing rays) or [w_min, 1]
         # (blade, plate above them).  The field is found by alternating a
@@ -498,14 +511,39 @@ class PlateSurface:
             out[1:-1, :] = 0.25 * out[:-2, :] + 0.5 * out[1:-1, :] + 0.25 * out[2:, :]
             return out
 
+        def monotone(v):
+            # dish in the middle, blade at the tips, one fold between: the
+            # twist may only grow from the noon centre towards either tip
+            out = v.copy()
+            out[:, :mid + 1] = np.maximum.accumulate(v[:, :mid + 1][:, ::-1], axis=1)[:, ::-1]
+            out[:, mid:] = np.maximum.accumulate(v[:, mid:], axis=1)
+            return out
+
         w = project(w)
         for _ in range(60):
             w = project(blur(w))
+            if MONOTONE_TWIST:
+                w = project(monotone(w))
             w = lower_envelope(w, step_az, step_r, 3)
         # continuity last: bounded rate of change everywhere, then a soft
         # blur so the fold has no creases (cells this pushes into a ray are
         # cut below, or accepted in the band)
         w = lower_envelope(w, step_az, step_r)
+        if CLOSE_BAND_DEG > 0:
+            # within the band a narrow dip of the fold (narrower than the
+            # window) is filled: morphological closing along the azimuth,
+            # then the usual rate bound; the band is never cut, the days
+            # this shadows are reported
+            kk = int(round(CLOSE_BAND_DEG / d_az))
+            hi = w.copy()
+            for sh in range(-kk, kk + 1):
+                hi = np.maximum(hi, np.roll(w, sh, axis=1))
+            closed = hi.copy()
+            for sh in range(-kk, kk + 1):
+                closed = np.minimum(closed, np.roll(hi, sh, axis=1))
+            blend = _smoothstep((RHO - (g.R_out - band_w - 4.0)) / 8.0)
+            w = np.maximum(w, blend * closed + (1.0 - blend) * w)
+            w = lower_envelope(w, step_az, step_r)
         for _ in range(6):
             w = blur(w)
         w = np.clip(w, 0.0, 1.0)
@@ -916,6 +954,9 @@ def _tube(path, radii, sections=48):
     return m
 
 
+MONOTONE_TWIST = True
+RELAX_BAND_DEG = 2.0
+CLOSE_BAND_DEG = 3.0
 TIP_ANGLE_REQ_DEG = 22.0     # the whole assembly may be tilted this far before it tips
 
 
