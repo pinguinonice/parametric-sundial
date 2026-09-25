@@ -26,7 +26,7 @@ WEB_DIR = Path(__file__).resolve().parent.parent.parent / "web"
 CACHE_DIR = Path(os.environ.get("SUNDIAL_CACHE", os.path.join(tempfile.gettempdir(), "sundial-web")))
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-CACHE_VERSION = "6"  # bump when the geometry changes so cached results are rebuilt
+CACHE_VERSION = "7"  # bump when the geometry changes so cached results are rebuilt
 
 app = FastAPI(title="Bernhardt sundial generator", version="1.0")
 
@@ -226,7 +226,8 @@ Parts
   dial.stl      crescent dial with hub. Print scale side up, tree supports under the wings.
   roller_1.stl  gnomon for 21 December to 21 June (one groove on the collar).
   roller_2.stl  gnomon for 21 June to 21 December (two grooves).
-  stand.stl     base with tilted stem ({d['tilt_deg']:.1f} degrees) and keyed pin.
+  stand.stl     base with tilted stem ({d['tilt_deg']:.1f} degrees), keyed pin, and the location
+                engraved on the disc in degrees, minutes and seconds.
 
 Assembly
   Put the dial on the stand pin (the flat on the pin keys the orientation).

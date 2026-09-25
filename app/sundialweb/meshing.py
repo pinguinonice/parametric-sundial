@@ -64,6 +64,23 @@ class BodyGeometry:
 # --------------------------------------------------------------------------
 # helpers
 
+def dms(value: float, pos: str, neg: str) -> str:
+    """48.7758 -> 48\u00b046\u203233\u2033 N"""
+    a = abs(value)
+    d = int(a)
+    m = int((a - d) * 60)
+    sec = int(round(((a - d) * 60 - m) * 60))
+    if sec == 60:
+        sec, m = 0, m + 1
+    if m == 60:
+        m, d = 0, d + 1
+    return f"{d}\u00b0{m:02d}\u2032{sec:02d}\u2033 {pos if value >= 0 else neg}"
+
+
+def location_text(lat: float, lon: float) -> str:
+    return f"{dms(lat, 'N', 'S')}   {dms(lon, 'E', 'W')}"
+
+
 def _smoothstep(x):
     x = np.clip(x, 0.0, 1.0)
     return x * x * (3.0 - 2.0 * x)
@@ -113,6 +130,15 @@ def _revolve(profile_rz, sections=128):
     if m.volume < 0:
         m.invert()
     return m
+
+
+def _largest_body(mesh):
+    """Booleans on engraved text can leave a detached sliver the size of a
+    letter counter; keep the main body only."""
+    parts = mesh.split(only_watertight=False)
+    if len(parts) <= 1:
+        return mesh
+    return max(parts, key=lambda m: abs(m.volume))
 
 
 def _cyl(radius, height, sections=96):
@@ -642,7 +668,7 @@ def build_dial(d: Design, g: BodyGeometry, engrave: bool = True):
         cutters += engraving_cutters(d, g, surf)
 
     cutter = trimesh.boolean.union(cutters, engine="manifold")
-    dial = trimesh.boolean.difference([body, cutter], engine="manifold")
+    dial = _largest_body(trimesh.boolean.difference([body, cutter], engine="manifold"))
     info = {"dish_depth": D0, "hub_radius": r_hub, "hub_top_z": z_top, "hub_bottom_z": z_bot,
             "psi_mid": surf.psi_mid, "psi_half": surf.psi_half, "surface": surf}
     return dial, info
@@ -689,7 +715,7 @@ def engraving_cutters(d: Design, g: BodyGeometry, surf: PlateSurface):
         cutters.append(tm)
     # zone label below the 12 mark, two lines
     small = max(3.0, g.text_h * 0.55)
-    lines = [ln for ln in [d.params.zone_label, "SUMMER TIME +1 H"] if ln]
+    lines = [ln for ln in [d.params.zone_label, "SUMMER TIME +1 H", location_text(d.params.lat, d.params.lon)] if ln]
     rho_l = rho_txt - g.text_h / 2.0 - 2.5 - small / 2.0
     psi12 = float(d.psi_of_time(12))
     for ln in lines:
@@ -749,7 +775,23 @@ def build_stand(d: Design, g: BodyGeometry):
     body = trimesh.boolean.union([base, stem, fin, pin], engine="manifold")
     below = trimesh.creation.box((4 * base_r, 4 * base_r, 40.0))
     below.apply_translation([0, y_c / 2.0, -20.0])
-    stand = trimesh.boolean.difference([body, below], engine="manifold")
+    cutters = [below]
+    # location and zone on the base, in front of the fin where the reader stands
+    y_edge = y_c / 2.0 - base_r                 # equator-side rim of the disc
+    y_free = min(back, 0.0) - 3.0               # back of the fin
+    room = y_free - y_edge
+    h1 = min(4.5, max(3.0, room * 0.28))
+    h2 = h1 * 0.72
+    y1 = y_free - 2.0 - h1 / 2.0
+    y2 = y1 - h1 / 2.0 - 2.0 - h2 / 2.0
+    for text, h, y in [(location_text(d.params.lat, d.params.lon), h1, y1), (d.params.zone_label, h2, y2)]:
+        if not text or y - h / 2.0 < y_edge + 2.0:
+            continue
+        tm = text_mesh(text, h, g.engrave)
+        if tm is not None:
+            tm.apply_translation([0, y, g.base_t])
+            cutters.append(tm)
+    stand = _largest_body(trimesh.boolean.difference([body, trimesh.boolean.union(cutters, engine="manifold")], engine="manifold"))
     info = {"stem_length": L_stem, "dial_centre": centre.tolist(), "axis": a.tolist(),
             "base_radius": base_r, "base_centre_y": y_c / 2.0, "tilt_deg": math.degrees(phi)}
     return stand, info
