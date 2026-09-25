@@ -27,6 +27,22 @@ Command line, no server:
 cd app && python -m sundialweb.cli --lat 48.7758 --lon 9.1829 --utc 1 --label "CET  UTC+1" -o out/
 ```
 
+## Host it for free
+
+The app is a single container (Dockerfile in the repo, honours `PORT`) and needs about 300 MB
+of RAM and a few seconds of CPU per generation, so the free tiers are enough:
+
+* **Hugging Face Spaces** (simplest, no card): create a Space with the *Docker* SDK, push this
+  repo to it, and add `app_port: 8000` to the Space's README front matter. Spaces sleep after
+  48 h without visitors and wake on the next request.
+* **Render**: fork the repo, then *New > Blueprint* and pick `render.yaml`. The free web service
+  sleeps after 15 min idle and takes about a minute to wake.
+* **Google Cloud Run**: `gcloud run deploy --source .` from the repo root; scales to zero and the
+  monthly free tier covers hobby traffic.
+
+Generated results are cached in `SUNDIAL_CACHE` (default: the system temp dir); on these hosts
+the cache is wiped on restart, which is fine.
+
 ## What the site does
 
 1. Pick a location on the map or type coordinates. The standard-time UTC offset of the local
