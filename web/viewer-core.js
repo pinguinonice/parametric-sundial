@@ -59,7 +59,7 @@ export function createStage(canvas) {
   camera.up.set(0, 0, 1);
   const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.49; controls.minDistance = 120; controls.maxDistance = 900;
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x9c8f7a, 0.35));
+  scene.add(new THREE.HemisphereLight(0xfff8ee, 0xc9bda6, 0.75));   // sky and a warm ground bounce so undersides read
   const sun = new THREE.DirectionalLight(0xfff1d6, 2.6);
   sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
   Object.assign(sun.shadow.camera, { left: -230, right: 230, top: 230, bottom: -230, near: 10, far: 1600 });
@@ -146,7 +146,24 @@ export function createStage(canvas) {
     const { eotMin } = sunGeometry(unix);
     return { elev, az, up, roller, eotMin, inRange: mins / 60 >= des.hour_first && mins / 60 <= des.hour_last, wrongRoller: rollerChoice !== 'auto' && roller !== rollerForDate(mo, d) };
   }
-  return { scene, camera, renderer, addPart, setInfo, setTime, rollerForDate, get info() { return info; } };
+  // scripted camera for the visual audit: azimuth from north clockwise,
+  // elevation above the ground, distance in mm, target in ENU (default the
+  // dial centre) plus an optional offset in the dial's own frame
+  function setView({ az = 180, elev = 25, dist = 300, target = null, dialOffset = null } = {}) {
+    let tgt = target ? new THREE.Vector3(...target) : (info ? new THREE.Vector3(...info.assembly.dial_centre_enu) : new THREE.Vector3(0, 0, 60));
+    if (dialOffset && info) {
+      const M = M4(info.assembly.dial_to_world);
+      const o = new THREE.Vector3(...dialOffset).applyMatrix4(M).sub(new THREE.Vector3(...info.assembly.dial_centre_enu));
+      tgt = tgt.add(o);
+    }
+    const a = az * DEG, e = elev * DEG;
+    controls.maxPolarAngle = elev < 0 ? Math.PI : Math.PI * 0.49;
+    controls.minDistance = 20;
+    controls.target.copy(tgt);
+    camera.position.set(tgt.x + dist * Math.sin(a) * Math.cos(e), tgt.y + dist * Math.cos(a) * Math.cos(e), tgt.z + dist * Math.sin(e));
+    controls.update();
+  }
+  return { scene, camera, renderer, addPart, setInfo, setTime, setView, rollerForDate, get info() { return info; } };
 }
 
 // ---------- figures --------------------------------------------------------

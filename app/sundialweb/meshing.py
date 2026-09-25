@@ -92,7 +92,7 @@ def _frame_matrix(X, Y, Z, origin):
     return M
 
 
-def _text_polygons(text: str, height: float):
+def _text_polygons(text: str, height, scale=None):
     tp = TextPath((0, 0), text, size=1.0, prop=_FONT)
     geom = None
     for poly in tp.to_polygons():
@@ -105,18 +105,59 @@ def _text_polygons(text: str, height: float):
     if geom is None or geom.is_empty:
         return []
     minx, miny, maxx, maxy = geom.bounds
-    scale = height / max(maxy - miny, 1e-6)
-    cx, cy = 0.5 * (minx + maxx), 0.5 * (miny + maxy)
     from shapely.affinity import translate, scale as sscale
+    if scale is None:
+        scale = height / max(maxy - miny, 1e-6)
+        cx, cy = 0.5 * (minx + maxx), 0.5 * (miny + maxy)
+    else:
+        # fixed scale: centre horizontally on the glyph, vertically on the digit height
+        cx, cy = 0.5 * (minx + maxx), 0.5 * _cap_height()
     geom = sscale(translate(geom, -cx, -cy), scale, scale, origin=(0, 0))
     polys = list(geom.geoms) if hasattr(geom, "geoms") else [geom]
     return [p for p in polys if p.area > 1e-6]
 
 
-def text_mesh(text: str, height: float, depth: float, above: float = 3.0):
+def arc_text_cutters(surf, d, text: str, height: float, rho: float, psi_deg: float, depth: float):
+    """Engraving cutters for `text` laid along the ring at radius rho,
+    centred on psi_deg, one cutter per character with its own local frame,
+    so the letters follow the dished surface instead of a flat chord."""
+    tp_all = TextPath((0, 0), text, size=1.0, prop=_FONT)
+    minx, _, maxx, _ = _path_bounds(tp_all)
+    scale = height / _cap_height()
+    total = (maxx - minx) * scale
+    cutters = []
+    for i, ch in enumerate(text):
+        if ch.strip() == "":
+            continue
+        left = _path_bounds(TextPath((0, 0), text[:i], size=1.0, prop=_FONT))[2] * scale if i else 0.0
+        mesh = text_mesh(ch, None, depth, scale=scale)
+        if mesh is None:
+            continue
+        w = _path_bounds(TextPath((0, 0), ch, size=1.0, prop=_FONT))[2] * scale
+        x_c = left + w / 2.0 - total / 2.0        # tangential offset from the string centre
+        dpsi = math.degrees(x_c / rho) * d.omega
+        mesh.apply_transform(surf.local_frame(rho, psi_deg + dpsi))
+        cutters.append(mesh)
+    return cutters
+
+
+def _path_bounds(tp):
+    v = tp.vertices
+    if len(v) == 0:
+        return (0.0, 0.0, 0.0, 0.0)
+    return (float(v[:, 0].min()), float(v[:, 1].min()), float(v[:, 0].max()), float(v[:, 1].max()))
+
+
+def _cap_height():
+    tp = TextPath((0, 0), "0", size=1.0, prop=_FONT)
+    b = _path_bounds(tp)
+    return b[3] - b[1]
+
+
+def text_mesh(text: str, height, depth: float, above: float = 3.0, scale: float = None):
     """Extruded text lying in the XY plane, spanning z in [-depth, above]."""
     parts = []
-    for poly in _text_polygons(text, height):
+    for poly in _text_polygons(text, height, scale):
         m = trimesh.creation.extrude_polygon(poly, depth + above)
         m.apply_translation([0, 0, -depth])
         parts.append(m)
@@ -432,7 +473,9 @@ class PlateSurface:
             rho_in[0], rho_in[-1] = raw[0], raw[-1]
             rho_in = np.maximum(rho_in, raw)
         kk = int(6.0 / d_az) | 1
-        rho_in = np.maximum(np.convolve(np.pad(rho_in, kk // 2, mode="edge"), np.ones(kk) / kk, mode="valid"), rho_in)
+        widened = rho_in.copy()
+        for _ in range(6):   # smoothed upper envelope: blur, then never below the cut
+            rho_in = np.maximum(np.convolve(np.pad(rho_in, kk // 2, mode="edge"), np.ones(kk) / kk, mode="valid"), widened)
         self._rho_in = np.minimum(rho_in, g.R_out - 0.4)
         self._z_top = z_top
         self._thick = thick
@@ -707,22 +750,15 @@ def engraving_cutters(d: Design, g: BodyGeometry, surf: PlateSurface):
     # hour numerals, "up" pointing outward, centred under the tick zone
     rho_txt = R - g.tick_zone - 1.5 - g.text_h / 2.0
     for h in range(h0, h1 + 1):
-        psi = float(d.psi_of_time(h))
-        tm = text_mesh(str(h), g.text_h, depth)
-        if tm is None:
-            continue
-        tm.apply_transform(surf.local_frame(rho_txt, psi))
-        cutters.append(tm)
-    # zone label below the 12 mark, two lines
+        cutters += arc_text_cutters(surf, d, str(h), g.text_h, rho_txt, float(d.psi_of_time(h)), depth)
+    # zone label, summer-time note and coordinates below the 12 mark
     small = max(3.0, g.text_h * 0.55)
     lines = [ln for ln in [d.params.zone_label, "SUMMER TIME +1 H", location_text(d.params.lat, d.params.lon)] if ln]
     rho_l = rho_txt - g.text_h / 2.0 - 2.5 - small / 2.0
     psi12 = float(d.psi_of_time(12))
     for ln in lines:
-        tm = text_mesh(ln, small, depth)
-        if tm is not None and rho_l - small / 2.0 > hub_radius(g, d) + 4.0:
-            tm.apply_transform(surf.local_frame(rho_l, psi12))
-            cutters.append(tm)
+        if rho_l - small / 2.0 > hub_radius(g, d) + 4.0:
+            cutters += arc_text_cutters(surf, d, ln, small, rho_l, psi12, depth)
         rho_l -= small + 2.0
     return cutters
 

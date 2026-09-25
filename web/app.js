@@ -6,6 +6,7 @@ import { t, lang, pickLanguage, setLanguage, languageSelector } from './i18n.js'
 const $ = (id) => document.getElementById(id);
 const STATIC = document.documentElement.classList.contains('static');   // hosted preview: no server
 const stage = createStage($('c'));
+window.__sundialStage = stage;   // scripted camera for the visual audit
 const state = { info: null, sweep: null };
 const rollerLabels = () => { const f = (m, d) => new Date(Date.UTC(2026, m, d)).toLocaleDateString(lang(), { day: 'numeric', month: 'short', timeZone: 'UTC' }); return { roller_1: { name: 'I', top: f(5, 21), bottom: f(11, 21) }, roller_2: { name: 'II', top: f(5, 21), bottom: f(11, 21) } }; };
 
