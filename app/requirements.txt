@@ -10,3 +10,4 @@ uvicorn[standard]>=0.29
 pydantic>=2.6
 timezonefinder>=6.5
 python-multipart>=0.0.9
+networkx>=3

@@ -48,7 +48,7 @@ class BodyGeometry:
     def for_radius(cls, R: float) -> "BodyGeometry":
         s = R / 75.0
         return cls(R=R,
-                   rim=max(2.0, 2.5 * s),
+                   rim=max(3.0, 3.5 * s),
                    plate_t=max(3.0, 4.0 * s),
                    w_tip=max(7.0, 9.0 * s),
                    tick_zone=max(6.0, 8.0 * s),
@@ -121,20 +121,22 @@ def arc_text_cutters(surf, d, text: str, height: float, rho: float, psi_deg: flo
     """Engraving cutters for `text` laid along the ring at radius rho,
     centred on psi_deg, one cutter per character with its own local frame,
     so the letters follow the dished surface instead of a flat chord."""
-    tp_all = TextPath((0, 0), text, size=1.0, prop=_FONT)
-    minx, _, maxx, _ = _path_bounds(tp_all)
     scale = height / _cap_height()
-    total = (maxx - minx) * scale
+    bar_l = _path_bounds(TextPath((0, 0), "|", size=1.0, prop=_FONT))[0]
+
+    def pen(prefix):   # pen position after `prefix`, spaces included
+        return _path_bounds(TextPath((0, 0), prefix + "|", size=1.0, prop=_FONT))[2] - (bar_l + _bar_w())
+
+    total = pen(text) * scale
     cutters = []
     for i, ch in enumerate(text):
         if ch.strip() == "":
             continue
-        left = _path_bounds(TextPath((0, 0), text[:i], size=1.0, prop=_FONT))[2] * scale if i else 0.0
+        gb = _path_bounds(TextPath((0, 0), ch, size=1.0, prop=_FONT))
         mesh = text_mesh(ch, None, depth, scale=scale)
         if mesh is None:
             continue
-        w = _path_bounds(TextPath((0, 0), ch, size=1.0, prop=_FONT))[2] * scale
-        x_c = left + w / 2.0 - total / 2.0        # tangential offset from the string centre
+        x_c = (pen(text[:i]) + 0.5 * (gb[0] + gb[2])) * scale - total / 2.0   # glyph centre from the string centre
         dpsi = math.degrees(x_c / rho) * d.omega
         mesh.apply_transform(surf.local_frame(rho, psi_deg + dpsi))
         cutters.append(mesh)
@@ -146,6 +148,11 @@ def _path_bounds(tp):
     if len(v) == 0:
         return (0.0, 0.0, 0.0, 0.0)
     return (float(v[:, 0].min()), float(v[:, 1].min()), float(v[:, 0].max()), float(v[:, 1].max()))
+
+
+def _bar_w():
+    b = _path_bounds(TextPath((0, 0), "|", size=1.0, prop=_FONT))
+    return b[2] - b[0]
 
 
 def _cap_height():
@@ -231,7 +238,7 @@ class PlateSurface:
         q = min(max(q, 0.02), 0.25)
         tip = np.clip((rel - (1.0 - q)) / q, 0.0, 1.0)
         round_w = np.sqrt(np.clip(1.0 - tip * tip, 0.0, 1.0))
-        rounded = g.R_out - 0.4 - (g.w_tip - 0.4) * round_w
+        rounded = g.R_out - 2.4 - (g.w_tip - 2.4) * round_w
         return np.where(rel > 1.0 - q, np.minimum(rho, rounded), rho)
 
     def _S(self, u):
@@ -456,6 +463,12 @@ class PlateSurface:
         fits = (~has_cross | (z_top <= floor_cross - 0.9) | (z_top - thick >= ceil_f + 0.2)) \
             & (z_top <= floor_own - 0.2)
         valid = fits | band
+        # around the hub the dish settles onto the hub top and the underside
+        # swells into a soft boss, so plate and hub read as one form
+        r_h = self.r_hub
+        beta = _smoothstep((r_h + 10.0 - RHO) / 8.0)
+        z_top = (1.0 - beta) * z_top + beta * (-self.D0)
+        thick = thick + 6.0 * beta
         # inner edge per column: contiguous from the rim, then styled edge
         rho_in = np.full(n_a, g.R_out)
         for j in range(n_a):
@@ -476,7 +489,7 @@ class PlateSurface:
         widened = rho_in.copy()
         for _ in range(6):   # smoothed upper envelope: blur, then never below the cut
             rho_in = np.maximum(np.convolve(np.pad(rho_in, kk // 2, mode="edge"), np.ones(kk) / kk, mode="valid"), widened)
-        self._rho_in = np.minimum(rho_in, g.R_out - 0.4)
+        self._rho_in = np.minimum(rho_in, g.R_out - 2.4)
         self._z_top = z_top
         self._thick = thick
         self._w = w
@@ -532,47 +545,67 @@ class PlateSurface:
         origin = np.array([rho * math.sin(pr), rho * math.cos(pr), float(self.z_top(rho, psi))])
         return _frame_matrix(X, Y, Z, origin)
 
-    def mesh(self, n_psi=541, n_v=57):
+    def normals(self, rho, psi):
+        """Upward unit normals for arrays of rho at one azimuth (deg)."""
+        rho = np.asarray(rho, dtype=float)
+        eps_r, eps_p = 0.25, 0.25
+        dzdr = (self.z_top(rho + eps_r, psi) - self.z_top(rho - eps_r, psi)) / (2 * eps_r)
+        dzdp = (self.z_top(rho, psi + eps_p) - self.z_top(rho, psi - eps_p)) / (2 * math.radians(eps_p))
+        pr = math.radians(psi)
+        gx = dzdr * math.sin(pr) + (dzdp / np.maximum(rho, 1e-6)) * math.cos(pr)
+        gy = dzdr * math.cos(pr) - (dzdp / np.maximum(rho, 1e-6)) * math.sin(pr)
+        n = np.stack([-gx, -gy, np.ones_like(rho)], -1)
+        return n / np.linalg.norm(n, axis=-1, keepdims=True)
+
+    def section(self, psi, n_v=41, n_round=9):
+        """Closed cross-section loop of the plate at azimuth psi: top surface
+        from the rim inward, a half-round around the inner edge, the
+        underside back out, a half-round around the rim.  Thickness is
+        measured along the surface normal, so the edges are true rounds."""
         g = self.g
+        pr = math.radians(psi)
+        e_rho = np.array([math.sin(pr), math.cos(pr), 0.0])
+        rho_in = float(self.rho_in(psi))
+        t_out = float(self.thickness(g.R_out - 1.0, psi))
+        t_in = float(self.thickness(rho_in + 1.0, psi))
+        a, b = g.R_out - t_out / 2.0, rho_in + t_in / 2.0
+        if b > a - 0.3:
+            b = a - 0.3
+        rho = np.linspace(a, b, n_v)
+        z = self.z_top(rho, psi)
+        top = np.stack([rho * math.sin(pr), rho * math.cos(pr), z], -1)
+        n = self.normals(rho, psi)
+        t = np.clip(self.thickness(rho, psi), 1.2, None)
+        bot = top - t[:, None] * n
+        # in-surface outward radial direction at both edges
+        def e_r(k):
+            v = e_rho - np.dot(e_rho, n[k]) * n[k]
+            return v / np.linalg.norm(v)
+        theta = np.linspace(math.pi / 2, -math.pi / 2, n_round + 2)[1:-1]
+        c_in = top[-1] - (t[-1] / 2.0) * n[-1]
+        rnd_in = np.array([c_in + (t[-1] / 2.0) * (math.cos(th) * (-e_r(-1)) + math.sin(th) * n[-1]) for th in theta])
+        c_out = top[0] - (t[0] / 2.0) * n[0]
+        rnd_out = np.array([c_out + (t[0] / 2.0) * (math.cos(th) * e_r(0) + math.sin(th) * n[0]) for th in theta[::-1]])
+        return np.vstack([top, rnd_in, bot[::-1], rnd_out])
+
+    def mesh(self, n_psi=541, n_v=41):
         psi = np.linspace(self.psi_mid - self.psi_half, self.psi_mid + self.psi_half, n_psi)
-        v = np.linspace(0.0, 1.0, n_v)
-        P, V = np.meshgrid(psi, v, indexing="ij")
-        rho = g.R_out + (self.rho_in(P) - g.R_out) * V
-        pr = np.deg2rad(P)
-        x, y = rho * np.sin(pr), rho * np.cos(pr)
-        zt = self.z_top(rho, P)
-        zb = zt - self.thickness(rho, P)
-        top = np.stack([x, y, zt], -1).reshape(-1, 3)
-        bot = np.stack([x, y, zb], -1).reshape(-1, 3)
-        verts = np.vstack([top, bot])
-        nt = top.shape[0]
-
-        def idx(i, j, bottom=False):
-            return i * n_v + j + (nt if bottom else 0)
-
+        loops = [self.section(p, n_v=n_v) for p in psi]
+        N = loops[0].shape[0]
+        verts = np.vstack(loops)
         faces = []
         for i in range(n_psi - 1):
-            for j in range(n_v - 1):
-                a, b, c, dd = idx(i, j), idx(i + 1, j), idx(i + 1, j + 1), idx(i, j + 1)
-                faces += [[a, b, c], [a, c, dd]]
-                a, b, c, dd = idx(i, j, 1), idx(i + 1, j, 1), idx(i + 1, j + 1, 1), idx(i, j + 1, 1)
-                faces += [[a, c, b], [a, dd, c]]
-        for i in range(n_psi - 1):
-            a, b = idx(i, 0), idx(i + 1, 0)
-            a2, b2 = idx(i, 0, 1), idx(i + 1, 0, 1)
-            faces += [[a, a2, b2], [a, b2, b]]
-            j = n_v - 1
-            a, b = idx(i, j), idx(i + 1, j)
-            a2, b2 = idx(i, j, 1), idx(i + 1, j, 1)
-            faces += [[a, b2, a2], [a, b, b2]]
-        for j in range(n_v - 1):
-            a, b = idx(0, j), idx(0, j + 1)
-            a2, b2 = idx(0, j, 1), idx(0, j + 1, 1)
-            faces += [[a, b2, a2], [a, b, b2]]
-            i = n_psi - 1
-            a, b = idx(i, j), idx(i, j + 1)
-            a2, b2 = idx(i, j, 1), idx(i, j + 1, 1)
-            faces += [[a, a2, b2], [a, b2, b]]
+            o0, o1 = i * N, (i + 1) * N
+            for j in range(N):
+                k = (j + 1) % N
+                faces += [[o0 + j, o1 + j, o1 + k], [o0 + j, o1 + k, o0 + k]]
+        # end caps: fan around the loop centroid
+        for i, rev in ((0, True), (n_psi - 1, False)):
+            c = len(verts); verts = np.vstack([verts, loops[i].mean(axis=0, keepdims=True)])
+            o = i * N
+            for j in range(N):
+                k = (j + 1) % N
+                faces.append([c, o + k, o + j] if rev else [c, o + j, o + k])
         m = trimesh.Trimesh(vertices=verts, faces=np.asarray(faces), process=True)
         m.merge_vertices()
         trimesh.repair.fix_normals(m)
@@ -687,9 +720,16 @@ def build_dial(d: Design, g: BodyGeometry, engrave: bool = True):
     plate = surf.mesh()
     r_hub = hub_radius(g, d)
     z_top = -D0
-    hub = _cyl(r_hub, g.hub_len)
-    hub.apply_translation([0, 0, z_top - g.hub_len / 2])
-    # chamfer-like dome under the hub: a shallow cone ring
+    z_bot = z_top - g.hub_len
+    # hub: flared neck under the plate, straight waist, rounded foot
+    prof = [(0.0, z_bot)]
+    for a in np.linspace(-math.pi / 2, 0.0, 8):
+        prof.append(((r_hub - 5.0) + 5.0 * math.cos(a), (z_bot + 5.0) + 5.0 * math.sin(a)))
+    prof.append((r_hub, z_bot + 9.0))
+    for k in np.linspace(0.0, 1.0, 8)[1:]:
+        prof.append((r_hub + 4.0 * k * k, (z_bot + 9.0) + (z_top - 5.0 - (z_bot + 9.0)) * k))
+    prof += [(r_hub + 4.0, z_top), (0.0, z_top)]
+    hub = _revolve(prof, sections=128)
     body = trimesh.boolean.union([plate, hub], engine="manifold")
 
     cutters = []
@@ -698,7 +738,6 @@ def build_dial(d: Design, g: BodyGeometry, engrave: bool = True):
     sock.apply_translation([0, 0, z_top - g.socket_depth / 2 + 0.005])
     cutters.append(sock)
     # stand socket (D-shaped) from the bottom
-    z_bot = z_top - g.hub_len
     dsock = _cyl(g.pin_r + g.clearance, g.socket_depth + 0.01)
     dsock.apply_translation([0, 0, z_bot + g.socket_depth / 2 - 0.005])
     flat = pin_flat_offset(g)
@@ -763,32 +802,78 @@ def engraving_cutters(d: Design, g: BodyGeometry, surf: PlateSurface):
     return cutters
 
 
+def _tube(path, radii, sections=48):
+    """Watertight tube along a 3D polyline with a radius per point, capped."""
+    path = np.asarray(path, dtype=float)
+    n = len(path)
+    tang = np.gradient(path, axis=0)
+    tang /= np.linalg.norm(tang, axis=1, keepdims=True)
+    # planar path (x = 0): a constant binormal keeps the frames stable
+    B = np.array([1.0, 0.0, 0.0])
+    verts, faces = [], []
+    for i in range(n):
+        N = np.cross(B, tang[i]); N /= np.linalg.norm(N)
+        for k in range(sections):
+            a = 2 * math.pi * k / sections
+            verts.append(path[i] + radii[i] * (math.cos(a) * B + math.sin(a) * N))
+    for i in range(n - 1):
+        for k in range(sections):
+            a, b = i * sections + k, i * sections + (k + 1) % sections
+            c, dd = a + sections, b + sections
+            faces += [[a, c, dd], [a, dd, b]]
+    c0 = len(verts); verts.append(path[0]); c1 = len(verts); verts.append(path[-1])
+    for k in range(sections):
+        faces.append([c0, (k + 1) % sections, k])
+        base = (n - 1) * sections
+        faces.append([c1, base + k, base + (k + 1) % sections])
+    m = trimesh.Trimesh(vertices=np.array(verts), faces=np.array(faces), process=True)
+    trimesh.repair.fix_normals(m)
+    if m.volume < 0:
+        m.invert()
+    return m
+
+
 def build_stand(d: Design, g: BodyGeometry):
-    """Stand in its own frame: base on z=0, +y towards the elevated pole."""
+    """Stand in its own frame: base on z=0, +y towards the elevated pole.
+    A pebble-shaped base and a stem that rises vertically and bends into the
+    polar axis, tapering like the roller; a keyed pin on top."""
     phi = math.radians(abs(d.params.lat))
     phi = max(phi, math.radians(8.0))
     a = np.array([0.0, math.cos(phi), math.sin(phi)])
     up_side = np.array([0.0, -math.sin(phi), math.cos(phi)])  # = -y_dial
     D0 = dish_depth(g, d)
     R_out = g.R_out
-    clearance = 6.0
-    L_needed = (R_out * math.cos(phi) + clearance + g.base_t) / math.sin(phi) - g.hub_len - D0
-    L_stem = float(min(max(L_needed, 15.0), 160.0))
-    # dial centre (reading circle centre) in the stand frame
-    centre = (L_stem + g.hub_len + D0) * a + np.array([0, 0, 0])
+    clearance = 8.0
+    L_needed = (R_out * math.cos(phi) + clearance + 10.0) / math.sin(phi) - g.hub_len - D0
+    L_stem = float(min(max(L_needed, 0.55 * R_out), 170.0))
+    top = L_stem * a                      # pin base on the polar axis
+    centre = (L_stem + g.hub_len + D0) * a
     y_c = float(centre[1])
-    base_r = max(0.75 * R_out, 45.0, y_c / 2.0 + 14.0)
-    base_c = np.array([0.0, y_c / 2.0, 0.0])
+    base_r = max(0.6 * R_out, 40.0, y_c * 0.5 + 8.0)
+    h_b = max(8.0, 0.12 * base_r)
+    y_f = 0.45 * float(top[1])            # the stem leaves the base a little behind its centre
+    base_c = np.array([0.0, y_f, 0.0])
 
-    base = _cyl(base_r, g.base_t)
-    base.apply_translation([0, y_c / 2.0, g.base_t / 2.0])
+    # base: a flat-bottomed pebble (revolved superellipse)
+    prof = [(0.0, 0.0), (base_r, 0.0)]
+    for zf in np.linspace(0.0, 1.0, 16)[1:]:
+        prof.append((base_r * (1.0 - zf ** 2.6) ** 0.42, h_b * zf))
+    prof.append((0.0, h_b))
+    base = _revolve(prof, sections=128)
+    base.apply_translation(base_c)
+
+    # stem: cubic bezier from the base, vertical at first, ending along the axis
+    P0 = base_c + np.array([0.0, 0.0, h_b - 4.0])
+    H = float(np.linalg.norm(top - P0))
+    P1 = P0 + np.array([0.0, 0.0, 0.42 * H])
+    P2 = top - a * (0.40 * H)
+    ts = np.linspace(0.0, 1.0, 40)
+    path = np.array([(1 - t) ** 3 * P0 + 3 * (1 - t) ** 2 * t * P1 + 3 * (1 - t) * t * t * P2 + t ** 3 * top for t in ts])
+    r0 = g.stem_r
+    radii = r0 * (1.75 - 1.45 * ts + 0.85 * ts * ts)     # 1.75 r at the foot, waist, 1.15 r at the top
+    stem = _tube(path, radii)
 
     rot = trimesh.geometry.align_vectors([0, 0, 1.0], a)
-    stem_len = L_stem + 3.0
-    stem = _cyl(g.stem_r, stem_len)
-    stem.apply_transform(rot)
-    stem.apply_translation((L_stem - stem_len / 2.0) * a)
-    # foot: cut everything below the base top
     pin = _cyl(g.pin_r, g.pin_len)
     pin.apply_transform(rot)
     pin.apply_translation((L_stem + g.pin_len / 2.0 - 0.01) * a)
@@ -798,38 +883,31 @@ def build_stand(d: Design, g: BodyGeometry):
     cutbox.apply_translation((L_stem + g.pin_len / 2.0) * a + up_side * (flat + 2 * g.pin_r))
     pin = trimesh.boolean.difference([pin, cutbox], engine="manifold")
 
-    # gusset fin under the stem, in the meridian plane
-    Lc, Ls = L_stem * math.cos(phi), L_stem * math.sin(phi)
-    back = -g.stem_r / math.sin(phi) * 0.9
-    fin_poly = Polygon([(back, 0.0), (Lc + g.stem_r * math.sin(phi) * 0.5, 0.0),
-                        (Lc + g.stem_r * math.sin(phi) * 0.5, Ls - g.stem_r * math.cos(phi) * 0.5)])
-    fin = trimesh.creation.extrude_polygon(fin_poly, g.fin_t)
-    # polygon (u=y, v=z) extruded along w -> map (u, v, w) to (w, u, v)
-    Mf = np.array([[0, 0, 1, -g.fin_t / 2.0], [1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1]], dtype=float)
-    fin.apply_transform(Mf)
-
-    body = trimesh.boolean.union([base, stem, fin, pin], engine="manifold")
+    body = trimesh.boolean.union([base, stem, pin], engine="manifold")
+    cutters = []
     below = trimesh.creation.box((4 * base_r, 4 * base_r, 40.0))
-    below.apply_translation([0, y_c / 2.0, -20.0])
-    cutters = [below]
-    # location and zone on the base, in front of the fin where the reader stands
-    y_edge = y_c / 2.0 - base_r                 # equator-side rim of the disc
-    y_free = min(back, 0.0) - 3.0               # back of the fin
-    room = y_free - y_edge
-    h1 = min(4.5, max(3.0, room * 0.28))
+    below.apply_translation([0, y_f, -20.0])
+    cutters.append(below)
+    # location and zone on the base, on the equator side where the reader stands
+    y_edge = y_f - base_r
+    room = base_r - r0 * 1.9
+    h1 = min(4.5, max(3.0, room * 0.22))
     h2 = h1 * 0.72
-    y1 = y_free - 2.0 - h1 / 2.0
+    y1 = y_f - r0 * 2.1 - h1 / 2.0
     y2 = y1 - h1 / 2.0 - 2.0 - h2 / 2.0
     for text, h, y in [(location_text(d.params.lat, d.params.lon), h1, y1), (d.params.zone_label, h2, y2)]:
-        if not text or y - h / 2.0 < y_edge + 2.0:
+        if not text or y - h / 2.0 < y_edge + 6.0:
             continue
         tm = text_mesh(text, h, g.engrave)
         if tm is not None:
-            tm.apply_translation([0, y, g.base_t])
+            # engrave onto the dome: place at the local surface height, cutter reaches through the crown
+            rr = abs(y - y_f)
+            z_here = h_b * (1.0 - (rr / base_r) ** (2.6 / 0.42)) ** (1.0 / 2.6) if rr < base_r else 0.0
+            tm.apply_translation([0, y, z_here])
             cutters.append(tm)
     stand = _largest_body(trimesh.boolean.difference([body, trimesh.boolean.union(cutters, engine="manifold")], engine="manifold"))
     info = {"stem_length": L_stem, "dial_centre": centre.tolist(), "axis": a.tolist(),
-            "base_radius": base_r, "base_centre_y": y_c / 2.0, "tilt_deg": math.degrees(phi)}
+            "base_radius": base_r, "base_centre_y": y_f, "tilt_deg": math.degrees(phi)}
     return stand, info
 
 
