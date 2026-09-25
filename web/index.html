@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bernhardt Sundial Generator</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<header>
+  <h1>Bernhardt precision sundial</h1>
+  <p>A 3D-printable equatorial sundial with a shaped roller gnomon (<em>Bernhardtsche Walze</em>) that
+     reads mean zone time to the minute, computed for your location.</p>
+</header>
+
+<main>
+  <section class="panel" id="inputs">
+    <h2>1. Location</h2>
+    <div class="row">
+      <input id="search" type="text" placeholder="Search a place (OpenStreetMap)…">
+      <button id="searchBtn" type="button">Search</button>
+      <button id="geoBtn" type="button" title="Use browser location">📍</button>
+    </div>
+    <div id="map"></div>
+    <div class="grid2">
+      <label>Latitude <input id="lat" type="number" step="0.0001" min="-89.9" max="89.9" value="48.7758"></label>
+      <label>Longitude <input id="lon" type="number" step="0.0001" min="-180" max="180" value="9.1829"></label>
+    </div>
+    <h2>2. Time zone</h2>
+    <div class="grid2">
+      <label>Standard UTC offset (h) <input id="utc" type="number" step="0.25" min="-14" max="14" value="1"></label>
+      <label>Label on the dial <input id="label" type="text" value="CET  UTC+1" maxlength="18"></label>
+    </div>
+    <p class="hint" id="tzHint">Detected automatically from the location. The scale shows <strong>standard time</strong>
+       all year, no daylight-saving shift: add one hour while summer time is in effect (this note is also engraved on the dial).</p>
+    <h2>3. Size &amp; options</h2>
+    <label>Reading circle diameter <span id="diaVal">150</span> mm
+      <input id="dia" type="range" min="80" max="300" step="5" value="150"></label>
+    <p class="hint">The shape is scale-free, so any size works. Only the 8 mm plugs and the minimum roller neck
+       (4 mm) stay fixed. Up to 150 mm fits a 180 mm bed; 5-minute ticks below 160 mm, minute ticks above.</p>
+    <div class="grid2">
+      <label><input id="autoHours" type="checkbox" checked> Hour range from sunrise/sunset</label>
+      <span></span>
+      <label>First hour <input id="hFirst" type="number" min="1" max="11" value="5" disabled></label>
+      <label>Last hour <input id="hLast" type="number" min="13" max="23" value="20" disabled></label>
+      <label>Year (analemma) <input id="year" type="number" min="1900" max="2200" value="2026"></label>
+      <label>Min. roller neck radius (mm) <input id="minr" type="number" min="2" max="15" step="0.5" value="4"></label>
+    </div>
+    <button id="generate" class="primary" type="button">Generate sundial</button>
+    <div id="status" class="hint"></div>
+  </section>
+
+  <section class="panel" id="viewer">
+    <h2>Preview</h2>
+    <div id="canvasWrap"><canvas id="c"></canvas>
+      <div id="overlay"></div>
+    </div>
+    <div class="controls">
+      <label>Roller <select id="rollerSel">
+        <option value="roller_1">I · 21 Dec → 21 Jun</option>
+        <option value="roller_2">II · 21 Jun → 21 Dec</option></select></label>
+      <label><input id="explode" type="checkbox"> Show parts separately</label>
+      <label><input id="shadow" type="checkbox" checked> Sun &amp; shadow</label>
+      <label>Date <input id="simDate" type="date" value="2026-05-20"></label>
+      <label>Time <span id="simTimeVal">12:00</span>
+        <input id="simTime" type="range" min="0" max="1439" step="1" value="720"></label>
+    </div>
+    <div id="downloads" class="hidden">
+      <h3>Download</h3>
+      <a id="dlZip" class="button" download>All parts (zip)</a>
+      <a id="dlDial" class="button small" download>dial.stl</a>
+      <a id="dlR1" class="button small" download>roller_1.stl</a>
+      <a id="dlR2" class="button small" download>roller_2.stl</a>
+      <a id="dlStand" class="button small" download>stand.stl</a>
+    </div>
+    <div id="info" class="hidden">
+      <h3>Design</h3>
+      <dl id="infoList"></dl>
+      <ul id="warnings"></ul>
+    </div>
+  </section>
+
+  <section class="panel wide" id="howto">
+    <h2>How it works and how to use it</h2>
+    <div class="cols">
+      <div>
+        <h3>Principle</h3>
+        <p>The dial is an equatorial ring: a scale circle perpendicular to the Earth's axis, with the gnomon on
+           the axis. Instead of a thin rod the gnomon is a roller whose radius changes along its length.
+           Each day the sun's declination selects a different height of the roller, and at that height the roller
+           is exactly as thick as the equation of time demands for that day. The <strong>leading edge</strong> of
+           the roller's shadow therefore lands on the mark of the current mean time, not the true solar time.
+           Because every declination occurs twice a year with different equation-of-time values, there are two
+           rollers, swapped at the solstices. The longitude correction of your zone is rotated into the scale.</p>
+        <h3>Reading</h3>
+        <p>Read where the leading shadow edge (the edge ahead in the direction the shadow travels) crosses the tick
+           ends on the outer ring. The scale is standard time; add one hour during summer time. Near the solstices
+           the roller profile flattens, so expect a couple of minutes uncertainty for about a week.</p>
+      </div>
+      <div>
+        <h3>Printing</h3>
+        <ul>
+          <li><strong>dial.stl</strong>: scale side up as exported; enable tree supports for the wing undersides and the hub. 0.15–0.2 mm layers; the engraving is 0.6 mm deep.</li>
+          <li><strong>roller_1.stl / roller_2.stl</strong>: pin down, as exported, with a brim. Roller I has one groove on the collar, roller II has two.</li>
+          <li><strong>stand.stl</strong>: base down. Below 45° latitude the stem overhang is steep, so add supports or lay the stand on its fin.</li>
+          <li>Plugs are 8 mm with 0.15 mm clearance; sand lightly if tight.</li>
+        </ul>
+        <h3>Setting up</h3>
+        <ol>
+          <li>Level the base. Point the fin exactly to true north (true south on the southern hemisphere); a phone compass with declination correction or the noon shadow of a plumb line works.</li>
+          <li>Put the dial on the stand pin; the flat on the pin keys the orientation.</li>
+          <li>Insert the roller for the current half year, collar resting on the hub.</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+</main>
+<footer>Source: <a href="https://github.com/pinguinonice/parametric-sundial">pinguinonice/parametric-sundial</a>.
+  Geometry after J. R. Oliver (1892) and M. Bernhardt (1966), see Glaeser &amp; Hofmann, <em>Über minutengenaue Sonnenuhren für die Mittlere Zeit</em> (2004).</footer>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

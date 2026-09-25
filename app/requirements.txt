@@ -1,0 +1,12 @@
+numpy>=1.26
+scipy>=1.11
+trimesh>=4.4
+manifold3d>=2.5
+shapely>=2.0
+mapbox-earcut>=1.0
+matplotlib>=3.8
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+timezonefinder>=6.5
+python-multipart>=0.0.9

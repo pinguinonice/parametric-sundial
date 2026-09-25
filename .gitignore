@@ -1,7 +1,6 @@
-
 *.pyc
+__pycache__/
 .DS_Store
-.DS_Store
-.DS_Store
-.DS_Store
-.DS_Store
+.pytest_cache/
+sundial_out/
+*.egg-info/

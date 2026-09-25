@@ -1,56 +1,81 @@
-# solardial
+# parametric-sundial
 
-a parametric sundial after Bernhardt's concept, based on lat, lon of observer
-https://de.wikipedia.org/wiki/Bernhardtsche_Walze
+A web generator for a 3D-printable **Bernhardt precision sundial** (equatorial ring dial with
+a *Bernhardtsche Walze*, the shaped roller gnomon that builds the equation of time into the
+shadow so the dial reads mean zone time to the minute). Enter a location, get four STL files:
+the organic crescent dial, the two rollers (one per half year) and a stand tilted to your latitude.
 
-3d printer file
-![STL](https://github.com/pinguinonice/solardial/blob/master/docu/stl.PNG)
+![original dial](docu/stl.PNG)
 
+## Run it
 
-## Use
+```bash
+pip install -r app/requirements.txt
+cd app && uvicorn sundialweb.api:app --reload
+# open http://127.0.0.1:8000
+```
 
-`minScale,hourScale,P0,P1,P,noonTick=generateSundial(lat0,lon0,alt0,radius,noonOffset,season)`
+or with Docker:
 
-    This functions generates the gnomon and the scale for a bernard's sundial 
-    It takes in account the "Equation of time" for the observation point (lat0,lon0,alt0)
-    
-       
-    
-    Input:
-        lat0: latitude of observation point
-        lon0: longditude of observation point
-        alt0: altitude of observation point
-        radius: radius of the scale
-        noonOffset: turns the scale so the "noon" tick gets into different position.
-                    tweak here if the gnomon is to thick or to thin  
-        season:'fall' generates gnomon for 21.6. - 21.12.
-               'spring' generates gnomon for 21.12. - 21.6. 
-                    
-    Output:
-        minScale: the Minute ticks in enu
-        hourScale: the Hour ticks in enu
-        noonTick: the 12:00h noon tick in enu
-        P0: ray start points (first is gnomon axis) (coordinate referens system: east north up)
-        P1: ray end points (first is gnomon axis) (coordinate referens system: east north up)
-        P: gnomons points (crs: enu) each 182 block represents one hour over the year starting with "12:00h"
-          
+```bash
+docker build -t sundial . && docker run -p 8000:8000 sundial
+```
 
+Command line, no server:
 
+```bash
+cd app && python -m sundialweb.cli --lat 48.7758 --lon 9.1829 --utc 1 --label "CET  UTC+1" -o out/
+```
 
+## What the site does
 
-## Example plots
-For Stuttgart, Germany (with spring and fall gnomon):
+1. Pick a location on the map or type coordinates. The standard-time UTC offset of the local
+   zone is looked up automatically (no daylight-saving shift: the dial shows standard time and
+   carries an engraved note to add one hour in summer).
+2. Choose the reading-circle diameter (default 150 mm; the shape is scale-free, only the 8 mm
+   plugs and the minimum roller neck stay fixed). The hour range is derived from the earliest
+   sunrise and latest sunset at the location.
+3. Generate. A Three.js preview shows the assembled dial with a real sun position for any date and
+   time of the year, with shadows, so you can watch the leading edge of the roller shadow land on
+   the red expected-reading dot. Download the parts individually or as a zip with a README.
 
-![For Stuttgart Spring 21.12.-21.6.](https://github.com/pinguinonice/solardial/blob/master/docu/stuttgart.PNG)
+## How the geometry is computed (`app/sundialweb`)
 
-![For Stuttgart Fall 21.6.-21.12.](https://github.com/pinguinonice/solardial/blob/master/docu/stuttgart_fall.PNG)
+* `solar.py`: NOAA/Meeus solar position (declination, equation of time, hour angle) and the
+  *dial frame* (z = elevated celestial pole, y = shadow direction at true noon). Works in both
+  hemispheres.
+* `design.py`: for every 6 hours between the solstices the ray from the correct mean-time mark
+  towards the sun is intersected with the polar axis: its distance gives the roller radius, its
+  height the nodus position. The scale is rotated so the leading shadow edge is always ahead of
+  the shadow centre (longitude offset + max equation of time + minimum neck radius). The roller
+  is the envelope of all ray hyperboloids; near the solstices the hyperboloids overlap and no
+  surface of revolution can be tangent to every ray, so the residual error is balanced between
+  neighbouring days (about ±2.5 min for three weeks in December, ±1 min in June, otherwise
+  below 0.5 min). The reading error of every day is reported.
+* `meshing.py`: the crescent dial is a height field whose shape is derived from the sun rays
+  themselves: under the winter hours it is a dish so the low winter sun lights the scale from
+  above; where the low morning/evening sun has to pass the opposite wing the plate twists into a
+  thin blade in the scale plane; where neither works the plate is cut away (the crescent's inner
+  edge). Ticks and numerals are engraved with manifold booleans. Rollers are surfaces of revolution
+  with an identification groove (I = one, II = two) and a plug; the stand has a keyed pin so the
+  dial can only sit in the right orientation.
+* `api.py`: FastAPI, serves the frontend in `web/` and `/api/generate`, `/api/timezone`, `/api/sun`.
 
-For Equator
+Tests (`app/tests`) cast real rays against the generated roller and dial meshes to verify that the
+shadow edge lands on the right minute and that the dial body does not shadow its own scale.
 
-![For equator](https://github.com/pinguinonice/solardial/blob/master/docu/equator.PNG)
+## Printing
 
+* `dial.stl` scale side up, tree supports under the wings and hub; 0.15–0.2 mm layers.
+* `roller_1.stl`, `roller_2.stl` pin down with a brim.
+* `stand.stl` base down; below 45° latitude add supports under the stem or print it on its fin.
 
+Level the base, point the fin to true north (south on the southern hemisphere), drop the dial on
+the keyed pin, insert the roller for the current half year and read at the leading shadow edge.
 
-For Pole
+## References
 
-![For Pole](https://github.com/pinguinonice/solardial/blob/master/docu/pol.PNG)
+* Wikipedia: [Bernhardtsche Walze](https://de.wikipedia.org/wiki/Bernhardtsche_Walze)
+* G. Glaeser, W. Hofmann: *Über minutengenaue Sonnenuhren für die Mittlere Zeit*,
+  Informationsblätter der Geometrie 2/2004.
+* The original Python/Grasshopper experiments are kept in `sundial/`, `examples/` and `grasshopper/`.
