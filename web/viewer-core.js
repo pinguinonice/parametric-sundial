@@ -154,7 +154,8 @@ function setupCanvas(canvas) {
 }
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-export function drawAnalemma(canvas, params) {
+export function drawAnalemma(canvas, params, labels = {}) {
+  const L = { axisEot: 'sun early  \u2190  equation of time  \u2192  sun late', axisDecl: 'height of the sun', locale: 'en', ...labels };
   const { ctx, w, h } = setupCanvas(canvas);
   const ink = cssVar('--ink') || '#222', muted = cssVar('--muted') || '#777', brass = cssVar('--brass') || '#b4842a', line = cssVar('--line') || '#ddd';
   const pad = { l: 46, r: 18, t: 22, b: 40 };
@@ -164,8 +165,8 @@ export function drawAnalemma(canvas, params) {
   ctx.font = '12px "Source Sans 3", system-ui, sans-serif'; ctx.fillStyle = muted; ctx.strokeStyle = line; ctx.lineWidth = 1;
   for (let e = -15; e <= 15; e += 5) { ctx.beginPath(); ctx.moveTo(x(e), pad.t); ctx.lineTo(x(e), h - pad.b); ctx.stroke(); ctx.textAlign = 'center'; ctx.fillText((e > 0 ? '+' : '') + e + ' min', x(e), h - pad.b + 16); }
   for (let dcl = -20; dcl <= 20; dcl += 10) { ctx.beginPath(); ctx.moveTo(pad.l, y(dcl)); ctx.lineTo(w - pad.r, y(dcl)); ctx.stroke(); ctx.textAlign = 'right'; ctx.fillText(dcl + '°', pad.l - 6, y(dcl) + 4); }
-  ctx.fillStyle = muted; ctx.textAlign = 'center'; ctx.fillText('sun early  ←  equation of time  →  sun late', w / 2, h - 6);
-  ctx.save(); ctx.translate(12, h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('declination of the sun', 0, 0); ctx.restore();
+  ctx.fillStyle = muted; ctx.textAlign = 'center'; ctx.fillText(L.axisEot, w / 2, h - 6);
+  ctx.save(); ctx.translate(12, h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(L.axisDecl, 0, 0); ctx.restore();
   const year = params.year || 2026;
   const pts = [];
   for (let day = 0; day < 366; day++) {
@@ -179,18 +180,20 @@ export function drawAnalemma(canvas, params) {
   for (let m = 0; m < 12; m++) {
     const day = Math.round((Date.UTC(year, m, 1) - Date.UTC(year, 0, 1)) / 86400000);
     const p = pts[day]; ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, 7); ctx.fill();
-    ctx.textAlign = p.x > w / 2 ? 'left' : 'right'; ctx.fillText(MONTHS[m], p.x + (p.x > w / 2 ? 7 : -7), p.y + 4);
+    const mn = new Date(Date.UTC(year, m, 1)).toLocaleDateString(L.locale, { month: 'short', timeZone: 'UTC' });
+    ctx.textAlign = p.x > w / 2 ? 'left' : 'right'; ctx.fillText(mn, p.x + (p.x > w / 2 ? 7 : -7), p.y + 4);
   }
   ctx.strokeStyle = muted; ctx.setLineDash([3, 4]); ctx.beginPath(); ctx.moveTo(x(0), pad.t); ctx.lineTo(x(0), h - pad.b); ctx.stroke(); ctx.setLineDash([]);
 }
 
-export function drawProfiles(canvas, profiles, labels) {
+export function drawProfiles(canvas, profiles, labels, words = {}) {
+  const W = { empty: 'compute a dial to see its two rollers', scalePlane: 'scale plane', ...words };
   const { ctx, w, h } = setupCanvas(canvas);
   const ink = cssVar('--ink') || '#222', muted = cssVar('--muted') || '#777', brass = cssVar('--brass') || '#b4842a', line = cssVar('--line') || '#ddd';
   ctx.clearRect(0, 0, w, h);
   if (!profiles) {
     ctx.fillStyle = muted; ctx.font = 'italic 16px "Cormorant Garamond", Georgia, serif'; ctx.textAlign = 'center';
-    ctx.fillText('compute a dial to see its two rollers', w / 2, h / 2); return;
+    ctx.fillText(W.empty, w / 2, h / 2); return;
   }
   const names = Object.keys(profiles);
   const zAll = names.flatMap((n) => profiles[n].z), rAll = names.flatMap((n) => profiles[n].r);
@@ -213,6 +216,6 @@ export function drawProfiles(canvas, profiles, labels) {
     ctx.fillText(labels[n].name, cx, 22);
     ctx.font = '12px "Source Sans 3", system-ui, sans-serif'; ctx.fillStyle = muted;
     ctx.fillText(labels[n].top, cx, pad.t - 2); ctx.fillText(labels[n].bottom, cx, h - 8);
-    ctx.textAlign = 'left'; ctx.fillText('scale plane', cx + rMax * scale + 18, Y(0) + 4);
+    ctx.textAlign = 'left'; ctx.fillText(W.scalePlane, cx + rMax * scale + 18, Y(0) + 4);
   });
 }

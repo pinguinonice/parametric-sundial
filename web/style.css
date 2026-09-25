@@ -82,3 +82,21 @@ button.secondary,.button{font:inherit;font-size:15px;padding:9px 14px;border-rad
 footer{padding:36px 0 0;color:var(--muted);font-size:14px;border-top:1px solid var(--line);margin-top:60px}
 @media (max-width:900px){.two,.two.rev,.maker,.limits{grid-template-columns:1fr}.controls{grid-template-columns:1fr 1fr}.controls .span{grid-column:1/-1}}
 @media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+
+/* language, support, rtl */
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:18px 0 0}
+.brand{font-family:var(--display);font-size:26px;color:var(--brass)}
+#langSel{width:auto;padding:6px 30px 6px 10px;font-size:14px}
+.support{margin:18px 0 0;display:flex;flex-direction:column;gap:2px}
+.support a{font-size:15px;color:var(--brass-deep);text-decoration:none;border-bottom:1px solid var(--line)}
+.support a:hover{color:var(--brass);border-color:var(--brass)}
+.support .note{margin:0}
+.demo-only{display:none}
+html.static .generator-only{display:none}
+html.static .demo-only{display:block}
+html.static .maker{display:block}
+html[lang="ar"]{--display:"Amiri","Noto Naskh Arabic",serif;--body:"Noto Naskh Arabic","Amiri",system-ui,sans-serif}
+html[lang="ar"] body{font-size:18px;line-height:1.8}
+html.rtl .quote{border-left:0;border-right:3px solid var(--brass);padding-left:0;padding-right:18px}
+html.rtl .step{text-align:right}
+html.rtl .caption,html.rtl .controls,html.rtl .chip-row{direction:rtl}

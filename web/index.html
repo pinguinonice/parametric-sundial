@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>The Sundial That Keeps Clock Time</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Source+Sans+3:wght@400;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Source+Sans+3:wght@400;600&family=Amiri:ital,wght@0,400;0,700;1,400&family=Noto+Naskh+Arabic:wght@400;600&display=swap">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
 <link rel="stylesheet" href="style.css">
 <script type="importmap">
@@ -17,30 +17,29 @@
 <body>
 <div class="wrap">
 
+<nav class="topbar"><span class="brand">☉</span><span id="langBox"></span></nav>
+
 <section class="hero">
   <div class="hero-text">
-    <div class="eyebrow">A sundial computed for your latitude</div>
-    <h1>The sundial that keeps clock time</h1>
-    <p class="lede">Every ordinary sundial runs up to sixteen minutes fast or slow over the year. The Earth's path is an
-      ellipse and its axis is tilted, so the sun itself is a slightly unreliable clock. In 1892 a British general and in 1966 a
-      watchmaker from the Black Forest found the same remedy: replace the thin rod with a shaped roller and let the edge of
-      its shadow carry the correction. This page builds one for your window sill, balcony or garden, ready to print.</p>
+    <div class="eyebrow" data-i18n="eyebrow"></div>
+    <h1 data-i18n="title"></h1>
+    <p class="lede" data-i18n="lede"></p>
   </div>
   <div class="stage">
     <canvas id="c"></canvas>
   </div>
-  <div class="caption" id="readout"><span class="big">Stuttgart</span><span>compute a dial to start the sun</span></div>
+  <div class="caption" id="readout"><span class="big">☉</span><span data-i18n="readoutEmpty"></span></div>
   <div class="controls">
-    <div><label for="simDate">Date</label><input type="date" id="simDate" value="2026-05-20"></div>
-    <div class="span"><label for="simTime">Standard time</label>
+    <div><label for="simDate" data-i18n="date"></label><input type="date" id="simDate" value="2026-05-20"></div>
+    <div class="span"><label for="simTime" data-i18n="time"></label>
       <div style="display:flex;align-items:center;gap:14px"><input id="simTime" type="range" min="0" max="1439" step="1" value="720"><span class="time" id="simTimeVal">12:00</span></div></div>
-    <div><label for="rollerSel">Roller</label><select id="rollerSel"><option value="auto">by date</option><option value="roller_1">I · 21 Dec–21 Jun</option><option value="roller_2">II · 21 Jun–21 Dec</option></select></div>
-    <div><label class="check"><input id="explode" type="checkbox"> parts apart</label></div>
+    <div><label for="rollerSel" data-i18n="roller"></label><select id="rollerSel"><option value="auto" data-i18n="rollerAuto"></option><option value="roller_1" data-i18n="rollerI"></option><option value="roller_2" data-i18n="rollerII"></option></select></div>
+    <div><label class="check"><input id="explode" type="checkbox"> <span data-i18n="apart"></span></label></div>
     <div class="chip-row">
-      <button class="chip" type="button" data-date="03-20" data-min="720">Spring equinox, noon</button>
-      <button class="chip" type="button" data-date="06-21" data-min="1170">Midsummer, half past seven</button>
-      <button class="chip" type="button" data-date="11-03" data-min="600">3 November, the sun 16 min early</button>
-      <button class="chip" type="button" data-date="12-21" data-min="720">Winter solstice, noon</button>
+      <button class="chip" type="button" data-date="03-20" data-min="720" data-i18n="chip1"></button>
+      <button class="chip" type="button" data-date="06-21" data-min="1170" data-i18n="chip2"></button>
+      <button class="chip" type="button" data-date="11-03" data-min="600" data-i18n="chip3"></button>
+      <button class="chip" type="button" data-date="12-21" data-min="720" data-i18n="chip4"></button>
     </div>
   </div>
 </section>
@@ -48,132 +47,111 @@
 <section class="chapter" id="why">
   <div class="two">
     <div class="prose">
-      <div class="num">Chapter one</div>
-      <h2>Why the sun runs early and late</h2>
-      <p>A sundial measures the sun's hour angle, and the sun does not cross the sky at a steady pace. In January the Earth is
-        closest to the sun and moves fastest along its orbit; in July it dawdles. On top of that the tilt of the axis stretches
-        and squeezes the sun's daily progress along the celestial equator. Add both effects and you get the <em>equation of time</em>:
-        the sun is up to 16.4 minutes early in early November and 14.2 minutes late in mid-February. Only four days a year
-        does it agree with the clock.</p>
-      <p>Astronomers draw this as a figure of eight, the analemma. The one on the right is computed for your location and year
-        from the same formulas that shape the roller.</p>
+      <div class="num" data-i18n="ch1n"></div>
+      <h2 data-i18n="ch1h"></h2>
+      <p data-i18n="ch1p1"></p>
+      <p data-i18n="ch1p2"></p>
     </div>
-    <div class="figure"><canvas id="analemma" width="640" height="560"></canvas><div class="cap" id="analemmaCap">Equation of time through the year</div></div>
+    <div class="figure"><canvas id="analemma" width="640" height="560"></canvas><div class="cap" id="analemmaCap"></div></div>
   </div>
 </section>
 
 <section class="chapter" id="roller">
   <div class="two rev">
-    <div class="figure"><canvas id="profileFig" width="640" height="560"></canvas><div class="cap" id="profileCap">Roller profiles, radius against height on the polar axis</div></div>
+    <div class="figure"><canvas id="profileFig" width="640" height="560"></canvas><div class="cap" id="profileCap"></div></div>
     <div class="prose">
-      <div class="num">Chapter two</div>
-      <h2>Bernhardt's roller</h2>
-      <p>John Ryder Oliver patented the idea in London in 1892. Martin Bernhardt, a watchmaker from Freudenstadt, worked it out
-        again from memory during years of captivity after the war, and built the first one in 1966 for a Sky &amp; Telescope
-        competition. About one hundred and fifty of his dials stand in public places today.</p>
-      <p>The trick is simple to say and lovely to watch. A roller throws a broad shadow with two edges. You read the leading
-        edge only. As the seasons carry the sun higher and lower, a different height of the roller does the shadow casting,
-        and at every height the roller is exactly as thick as that day's correction demands. The correction is not written on
-        the dial; it is carved into the gnomon.</p>
-      <p class="quote">Every declination of the sun occurs twice a year, with different corrections. So there are two rollers,
-        one for the rising half of the year and one for the falling half, swapped at the solstices.</p>
+      <div class="num" data-i18n="ch2n"></div>
+      <h2 data-i18n="ch2h"></h2>
+      <p data-i18n="ch2p1"></p>
+      <p data-i18n="ch2p2"></p>
+      <p class="quote" data-i18n="ch2quote"></p>
     </div>
   </div>
 </section>
 
 <section class="chapter" id="shape">
   <div class="prose">
-    <div class="num">Chapter three</div>
-    <h2>A shape the light draws</h2>
-    <p>The crescent is not styling. The plate is a negotiation with the low winter sun. Where the sun must reach the scale from
-      above, the plate dips into a dish. Where the early and late sun must pass across to the far side, the wing thins into a
-      blade in the plane of the scale, so that only for a few days around the equinoxes does its shadow get in the way. Wherever
-      neither is possible the plate is cut away, and that cut is the inner edge of the crescent.</p>
-    <p>The generator traces every sunlit quarter hour of the winter half-years across the dial and lets those rays decide the
-      shape. Change the latitude and the dish deepens, the wings twist, the horns reach for the summer hours.</p>
+    <div class="num" data-i18n="ch3n"></div>
+    <h2 data-i18n="ch3h"></h2>
+    <p data-i18n="ch3p1"></p>
+    <p data-i18n="ch3p2"></p>
   </div>
 </section>
 
 <section class="chapter" id="make">
   <div class="prose">
-    <div class="num">Chapter four</div>
-    <h2>Make yours</h2>
-    <p>Choose the place it will stand. The zone offset is looked up for you; the dial shows standard time all year and carries a
-      small engraved reminder to add an hour in summer.</p>
+    <div class="num" data-i18n="ch4n"></div>
+    <h2 data-i18n="ch4h"></h2>
+    <p data-i18n="ch4p" class="generator-only"></p>
+    <p data-i18n="demoP" class="demo-only"></p>
   </div>
   <div class="maker">
-    <div>
-      <div class="row"><input id="search" type="text" placeholder="Find a place…"><button class="secondary" id="searchBtn" type="button">Search</button><button class="secondary" id="geoBtn" type="button" title="Use my location">◎</button></div>
+    <div class="generator-only">
+      <div class="row"><input id="search" type="text" data-i18n-ph="searchPh"><button class="secondary" id="searchBtn" type="button" data-i18n="search"></button><button class="secondary" id="geoBtn" type="button" data-i18n-title="geo">◎</button></div>
       <div id="map"></div>
       <div class="grid2">
-        <div class="field"><label for="lat">Latitude</label><input id="lat" type="number" step="0.0001" min="-89.9" max="89.9" value="48.7758"></div>
-        <div class="field"><label for="lon">Longitude</label><input id="lon" type="number" step="0.0001" min="-180" max="180" value="9.1829"></div>
-        <div class="field"><label for="utc">Standard UTC offset</label><input id="utc" type="number" step="0.25" min="-14" max="14" value="1"></div>
-        <div class="field"><label for="label">Engraved zone label</label><input id="label" type="text" value="CET  UTC+1" maxlength="18"></div>
+        <div class="field"><label for="lat" data-i18n="lat"></label><input id="lat" type="number" step="0.0001" min="-89.9" max="89.9" value="48.7758"></div>
+        <div class="field"><label for="lon" data-i18n="lon"></label><input id="lon" type="number" step="0.0001" min="-180" max="180" value="9.1829"></div>
+        <div class="field"><label for="utc" data-i18n="utc"></label><input id="utc" type="number" step="0.25" min="-14" max="14" value="1"></div>
+        <div class="field"><label for="label" data-i18n="label"></label><input id="label" type="text" value="CET  UTC+1" maxlength="18"></div>
       </div>
       <p class="note" id="tzHint"></p>
-      <div class="field"><label for="dia">Reading circle Ø <span id="diaVal">150</span> mm</label><input id="dia" type="range" min="80" max="300" step="5" value="150">
-        <p class="note">The shape is scale-free. Up to 150 mm fits a 180 mm bed.</p></div>
+      <div class="field"><label for="dia" id="diaLabel"></label><input id="dia" type="range" min="80" max="300" step="5" value="150">
+        <p class="note" data-i18n="diaNote"></p></div>
       <div class="grid2">
-        <div class="field"><label class="check"><input id="autoHours" type="checkbox" checked> hours from sunrise to sunset</label></div><div></div>
-        <div class="field"><label for="hFirst">First hour</label><input id="hFirst" type="number" min="1" max="11" value="5" disabled></div>
-        <div class="field"><label for="hLast">Last hour</label><input id="hLast" type="number" min="13" max="23" value="20" disabled></div>
-        <div class="field"><label for="year">Year</label><input id="year" type="number" min="1900" max="2200" value="2026"></div>
-        <div class="field"><label for="minr">Thinnest neck, mm</label><input id="minr" type="number" min="2" max="15" step="0.5" value="4"></div>
+        <div class="field"><label class="check"><input id="autoHours" type="checkbox" checked> <span data-i18n="autoHours"></span></label></div><div></div>
+        <div class="field"><label for="hFirst" data-i18n="hFirst"></label><input id="hFirst" type="number" min="1" max="11" value="5" disabled></div>
+        <div class="field"><label for="hLast" data-i18n="hLast"></label><input id="hLast" type="number" min="13" max="23" value="20" disabled></div>
+        <div class="field"><label for="year" data-i18n="year"></label><input id="year" type="number" min="1900" max="2200" value="2026"></div>
+        <div class="field"><label for="minr" data-i18n="minr"></label><input id="minr" type="number" min="2" max="15" step="0.5" value="4"></div>
       </div>
-      <button id="generate" class="primary" type="button">Compute my sundial</button>
+      <button id="generate" class="primary" type="button" data-i18n="generate"></button>
       <div class="status" id="status"></div>
     </div>
     <div>
-      <h3>What you get</h3>
-      <p class="note">Four parts, generated for your latitude and longitude. The preview at the top of the page switches to your
-        dial as soon as it is ready.</p>
-      <div id="downloads" class="downloads hidden">
-        <a id="dlZip" class="button main" download>Everything, zip</a>
-        <a id="dlDial" class="button" download>dial.stl</a>
-        <a id="dlR1" class="button" download>roller I</a>
-        <a id="dlR2" class="button" download>roller II</a>
-        <a id="dlStand" class="button" download>stand.stl</a>
+      <h3 class="generator-only" data-i18n="whatH"></h3>
+      <h3 class="demo-only" data-i18n="demoH"></h3>
+      <p class="note generator-only" data-i18n="whatP"></p>
+      <div id="downloads" class="downloads hidden generator-only">
+        <a id="dlZip" class="button main" download data-i18n="dlZip"></a>
+        <a id="dlDial" class="button" download data-i18n="dlDial"></a>
+        <a id="dlR1" class="button" download data-i18n="dlR1"></a>
+        <a id="dlR2" class="button" download data-i18n="dlR2"></a>
+        <a id="dlStand" class="button" download data-i18n="dlStand"></a>
       </div>
       <dl class="facts" id="infoList"></dl>
       <ul id="warnings" class="warn"></ul>
+      <p class="support" id="supportBox"><a href="https://paypal.me/pinguinonice/1EUR" target="_blank" rel="noopener" data-i18n="support"></a><span class="note" data-i18n="supportNote"></span></p>
     </div>
   </div>
 </section>
 
 <section class="chapter" id="setup">
   <div class="prose">
-    <div class="num">Chapter five</div>
-    <h2>Set it up</h2>
-    <p>Print the dial scale side up with tree supports under the wings, the rollers pin down with a brim, and the stand base
-      down. Then, in this order:</p>
+    <div class="num" data-i18n="ch5n"></div>
+    <h2 data-i18n="ch5h"></h2>
+    <p data-i18n="ch5p"></p>
   </div>
   <div class="steps">
-    <div class="step"><h3>Level the base</h3><p>A bubble level on the disc, shims under the low edge. A tilt of one degree is a reading error of four minutes at noon.</p></div>
-    <div class="step"><h3>Aim the fin at true north</h3><p>Not magnetic north: correct your compass by the local declination, or use the shadow of a plumb line at local solar noon.</p></div>
-    <div class="step"><h3>Seat the dial</h3><p>The pin has a flat, the hub a matching socket. It only goes on one way, with the noon mark facing the pole.</p></div>
-    <div class="step"><h3>Choose the roller</h3><p>One groove from 21 December to 21 June, two grooves for the rest of the year. Read at the leading edge of the shadow, add an hour in summer time.</p></div>
+    <div class="step"><h3 data-i18n="s1h"></h3><p data-i18n="s1p"></p></div>
+    <div class="step"><h3 data-i18n="s2h"></h3><p data-i18n="s2p"></p></div>
+    <div class="step"><h3 data-i18n="s3h"></h3><p data-i18n="s3p"></p></div>
+    <div class="step"><h3 data-i18n="s4h"></h3><p data-i18n="s4p"></p></div>
   </div>
 </section>
 
 <section class="chapter" id="limits">
   <div class="prose">
-    <div class="num">Chapter six</div>
-    <h2>Where it is honest</h2>
+    <div class="num" data-i18n="ch6n"></div>
+    <h2 data-i18n="ch6h"></h2>
   </div>
   <div class="limits">
-    <p><strong>Near the solstices.</strong> For about three weeks in December and two in June the correction changes while the
-      sun's height stands still, and no roller can be tangent to every ray. The error is shared between neighbouring days and
-      stays within about two and a half minutes in winter, one in summer. Every other day reads to well within a minute.
-      Bernhardt's own dials have the same limit.</p>
-    <p><strong>Near the equinoxes.</strong> When the sun skims the plane of the scale, the far wing tip shadows the first and
-      last hour of the day for some weeks. The wings could avoid this with a sharp step, but the surface is kept
-      continuous instead, which prints and looks better. The generator lists the exact dates for your dial.</p>
+    <p data-i18n="lim1"></p>
+    <p data-i18n="lim2"></p>
   </div>
 </section>
 
-<footer>Sources: Glaeser &amp; Hofmann, <em>Über minutengenaue Sonnenuhren für die Mittlere Zeit</em> (2004); Wikipedia,
-  <em>Bernhardtsche Walze</em>. Code on <a href="https://github.com/pinguinonice/parametric-sundial">GitHub</a>.</footer>
+<footer data-i18n="footer"></footer>
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script type="module" src="app.js"></script>
