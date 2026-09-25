@@ -26,7 +26,7 @@ WEB_DIR = Path(__file__).resolve().parent.parent.parent / "web"
 CACHE_DIR = Path(os.environ.get("SUNDIAL_CACHE", os.path.join(tempfile.gettempdir(), "sundial-web")))
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-CACHE_VERSION = "3"  # bump when the geometry changes so cached results are rebuilt
+CACHE_VERSION = "4"  # bump when the geometry changes so cached results are rebuilt
 
 app = FastAPI(title="Bernhardt sundial generator", version="1.0")
 
@@ -194,6 +194,9 @@ def generate(req: GenerateRequest):
         "bounds": bounds,
         "assembly": _assembly(d, parts),
         "accuracy": accuracy_report(d, 1.0),
+        "profiles": {rp.name: {"z": np.round(np.interp(np.linspace(0, 1, 120), np.linspace(0, 1, len(rp.z)), rp.z), 3).tolist(),
+                               "r": np.round(np.interp(np.linspace(0, 1, 120), np.linspace(0, 1, len(rp.r)), rp.r), 3).tolist()}
+                     for rp in d.rollers},
         "shadowed": shadowed_days_report(d, g, parts["dial_info"]["surface"]),
         "warnings": warnings,
     }
