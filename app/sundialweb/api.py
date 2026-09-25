@@ -26,7 +26,7 @@ WEB_DIR = Path(__file__).resolve().parent.parent.parent / "web"
 CACHE_DIR = Path(os.environ.get("SUNDIAL_CACHE", os.path.join(tempfile.gettempdir(), "sundial-web")))
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-CACHE_VERSION = "7"  # bump when the geometry changes so cached results are rebuilt
+CACHE_VERSION = "8"  # bump when the geometry changes so cached results are rebuilt
 
 app = FastAPI(title="Bernhardt sundial generator", version="1.0")
 
@@ -189,8 +189,12 @@ def generate(req: GenerateRequest):
             "tilt_deg": parts["stand_info"]["tilt_deg"],
             "stem_length": parts["stand_info"]["stem_length"],
             "base_radius": parts["stand_info"]["base_radius"],
+            "base_semi_axes": parts["stand_info"]["base_semi_axes"],
+            "base_centre_y": parts["stand_info"]["base_centre_y"],
+            "thread": parts["rollers"][0][2]["thread"],
             "minute_ticks": d.R * math.pi / 720.0 >= 0.7,
         },
+        "stability": parts["stand_info"]["stability"],
         "bounds": bounds,
         "assembly": _assembly(d, parts),
         "accuracy": accuracy_report(d, 1.0),
@@ -217,6 +221,7 @@ def _readme(info):
                     for a in info["accuracy"]) or "    none"
     sh = "\n".join(f"    {x['from']} - {x['to']} ({x['hours']})" for x in info["shadowed"]) or "    none"
     zone = p["zone_label"] or "UTC%+g" % p["utc_offset_h"]
+    stab = info["stability"]; thr = d["thread"]
     pole = "north" if p["lat"] >= 0 else "south"
     return f"""Bernhardt precision sundial, generated for
   latitude {p['lat']:.4f}, longitude {p['lon']:.4f}, zone {zone}
@@ -226,14 +231,20 @@ Parts
   dial.stl      crescent dial with hub. Print scale side up, tree supports under the wings.
   roller_1.stl  gnomon for 21 December to 21 June (one groove on the collar).
   roller_2.stl  gnomon for 21 June to 21 December (two grooves).
-  stand.stl     base with tilted stem ({d['tilt_deg']:.1f} degrees), keyed pin, and the location
-                engraved on the disc in degrees, minutes and seconds.
+  stand.stl     pebble base with tilted stem ({d['tilt_deg']:.1f} degrees), keyed pin, and the
+                location engraved on the pebble in degrees, minutes and seconds. The pebble is
+                sized so the assembled dial can be tilted {stab['required_tip_angle_deg']:.0f} degrees
+                before it tips (this one: {stab['tip_angle_deg']:.0f} degrees, {stab['margin_mm']:.0f} mm of
+                footprint beyond the centre of mass).
 
 Assembly
   Put the dial on the stand pin (the flat on the pin keys the orientation).
-  Level the base, point the fin exactly towards {pole} (true, not magnetic).
-  Plug in the roller for the current half year. Read the time at the LEADING edge of
-  the roller's shadow on the outer ring, where it crosses the tick ends.
+  Level the base, point the stem exactly towards {pole} (true, not magnetic).
+  Screw in the roller for the current half year until its collar seats on the hub: the
+  thread is a coarse rounded one ({thr['pitch']:.1f} mm pitch, {thr['clearance']:.1f} mm clearance)
+  that prints without calibration; the collar, not the thread, sets the height.
+  Read the time at the LEADING edge of the roller's shadow on the outer ring, where it
+  crosses the tick ends.
   The scale shows standard time; add one hour during summer time.
   Swap the roller at each solstice.
 

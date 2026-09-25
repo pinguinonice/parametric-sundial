@@ -206,3 +206,57 @@ def test_api_generate(tmp_path, monkeypatch):
         assert f.status_code == 200 and len(f.content) > 1000
     r = client.get("/api/sun", params={"lat": 48.7758, "lon": 9.1829, "utc_offset_h": 1, "year": 2026, "month": 6, "day": 21})
     assert r.status_code == 200 and len(r.json()["hours"]) == 288
+
+
+@pytest.mark.parametrize("lat,lon", [(10.0, 0.0), (30.0, 31.2), (-34.6, -58.4), (64.1, -21.9)])
+def test_stand_does_not_tip(lat, lon):
+    """The pebble base must carry the assembled dial with a safety margin:
+    the whole assembly can be tilted TIP_ANGLE_REQ_DEG in any direction
+    before its centre of mass leaves the footprint."""
+    from sundialweb.meshing import TIP_ANGLE_REQ_DEG, load_masses, _dial_to_stand
+    d = build_design(DesignParams(lat=lat, lon=lon, utc_offset_h=0.0))
+    parts = build_all(d)
+    stab = parts["stand_info"]["stability"]
+    assert stab["tip_angle_deg"] >= TIP_ANGLE_REQ_DEG - 0.5, stab
+    assert stab["margin_mm"] >= 8.0, stab
+    # independent check of the centre of mass from the real meshes
+    g = parts["geometry"]
+    loads = load_masses(d, g, parts["dial"], parts["rollers"], parts["dial_info"])
+    stand = parts["stand"]
+    V = sum(v for v, _ in loads) + stand.volume
+    com = (sum(v * np.asarray(c) for v, c in loads) + stand.volume * np.asarray(stand.center_mass)) / V
+    a_x, a_yp, a_ym = parts["stand_info"]["base_semi_axes"]
+    y_f = parts["stand_info"]["base_centre_y"]
+    dy = com[1] - y_f
+    a_y = a_yp if dy > 0 else a_ym
+    side = a_x * math.sqrt(max(1.0 - (dy / a_y) ** 2, 0.0)) - abs(com[0])
+    margin = min(a_yp - dy, a_ym + dy, side)
+    assert math.degrees(math.atan2(margin, com[2])) >= TIP_ANGLE_REQ_DEG - 1.0, (com, parts["stand_info"]["base_semi_axes"])
+    assert stand.bounds[0][2] == pytest.approx(0.0, abs=1e-6)
+
+
+def test_roller_screws_into_the_hub(stuttgart):
+    """Male and female thread are the same helix offset by the clearance:
+    seated on the hub with the phase aligned, the roller and the dial must
+    not overlap, and the roller must be free to turn (no overlap either at
+    a quarter turn less deep)."""
+    d, g = stuttgart
+    parts = build_all(d, g)
+    dial = parts["dial"]
+    name, roller, inf = parts["rollers"][0]
+    assert inf["thread"]["turns"] >= 3
+    best = None
+    for phase in np.linspace(0, 2 * np.pi, 24, endpoint=False):
+        r = roller.copy()
+        r.apply_transform(trimesh.transformations.rotation_matrix(phase, [0, 0, 1]))
+        r.apply_translation([0, 0, parts["dial_info"]["hub_top_z"] - g.pin_len])
+        inter = trimesh.boolean.intersection([dial, r], engine="manifold")
+        v = 0.0 if inter.is_empty else float(inter.volume)
+        best = v if best is None else min(best, v)
+    assert best < 0.5, best
+    # the thread holds: with the roller backed out by a quarter pitch and turned
+    # by a quarter turn against the helix, the ridges overlap the hub material
+    r = roller.copy()
+    r.apply_translation([0, 0, parts["dial_info"]["hub_top_z"] - g.pin_len + g.thread_pitch / 2])
+    inter = trimesh.boolean.intersection([dial, r], engine="manifold")
+    assert (0.0 if inter.is_empty else float(inter.volume)) > 5.0

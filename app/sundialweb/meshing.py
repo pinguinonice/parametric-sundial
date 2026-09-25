@@ -37,6 +37,9 @@ class BodyGeometry:
     neck_h: float = 5.0
     collar_h: float = 3.0
     hub_len: float = 22.0
+    thread_pitch: float = 2.5    # roller screws into the hub: coarse rounded thread
+    thread_depth: float = 1.0
+    thread_clearance: float = 0.3
     engrave: float = 0.6
     tick_zone: float = 8.0
     text_h: float = 6.0
@@ -169,6 +172,51 @@ def text_mesh(text: str, height, depth: float, above: float = 3.0, scale: float 
         m.apply_translation([0, 0, -depth])
         parts.append(m)
     return trimesh.util.concatenate(parts) if parts else None
+
+
+def _helical_thread(r_core, depth, pitch, length, fade=(1.5, 0.8), fade_to="core",
+                    sections=72, per_pitch=16):
+    """Screw body: a core of radius r_core carrying one rounded helical ridge
+    of height `depth` (profile 0.5 (1 + cos)), z from 0 to length.  The ridge
+    fades out over `fade` mm at the two ends, either into the core (a male
+    thread with a soft tip) or into the crest (a female cutter whose mouth
+    opens up).  Rounded flanks and the generous clearance used with it print
+    without any calibration."""
+    n_z = int(length / (pitch / per_pitch)) + 2
+    zs = np.linspace(0.0, length, n_z)
+    verts, faces = [], []
+    for z in zs:
+        ramp = 1.0
+        if fade[0] > 0:
+            ramp = min(ramp, z / fade[0])
+        if fade[1] > 0:
+            ramp = min(ramp, (length - z) / fade[1])
+        ramp = min(max(ramp, 0.0), 1.0)
+        for k in range(sections):
+            th = 2 * math.pi * k / sections
+            u = (z / pitch - th / (2 * math.pi)) % 1.0
+            ridge = 0.5 * (1.0 + math.cos(2 * math.pi * u))
+            if fade_to == "core":
+                r = r_core + depth * ramp * ridge
+            else:
+                r = r_core + depth * (ramp * ridge + (1.0 - ramp))
+            verts.append((r * math.cos(th), r * math.sin(th), z))
+    for i in range(n_z - 1):
+        for k in range(sections):
+            a, b = i * sections + k, i * sections + (k + 1) % sections
+            c, dd = a + sections, b + sections
+            faces += [[a, c, dd], [a, dd, b]]
+    c0 = len(verts); verts.append((0.0, 0.0, 0.0))
+    c1 = len(verts); verts.append((0.0, 0.0, length))
+    base = (n_z - 1) * sections
+    for k in range(sections):
+        faces.append([c0, (k + 1) % sections, k])
+        faces.append([c1, base + k, base + (k + 1) % sections])
+    m = trimesh.Trimesh(vertices=np.array(verts), faces=np.array(faces), process=True)
+    trimesh.repair.fix_normals(m)
+    if m.volume < 0:
+        m.invert()
+    return m
 
 
 def _revolve(profile_rz, sections=128):
@@ -733,7 +781,14 @@ def build_roller(d: Design, g: BodyGeometry, rp: RollerProfile, grooves: int):
     prof.append((0.0, z_hi + cap_h))
     m = _revolve(prof, sections=160)
     m.apply_translation([0, 0, -z_pin_bot])
-    return m, {"pin_bottom_z_dial": z_pin_bot, "length": z_hi + cap_h - z_pin_bot}
+    # the pin carries a coarse rounded thread and screws into the hub; the
+    # collar seats on the hub top, so the thread only holds and never sets the height
+    thread = _helical_thread(g.pin_r - 0.1, g.thread_depth + 0.1, g.thread_pitch, g.pin_len - 0.2,
+                             fade=(1.5, 0.8), fade_to="core")
+    m = trimesh.boolean.union([m, thread], engine="manifold")
+    return m, {"pin_bottom_z_dial": z_pin_bot, "length": z_hi + cap_h - z_pin_bot,
+               "thread": {"pitch": g.thread_pitch, "depth": g.thread_depth, "clearance": g.thread_clearance,
+                          "turns": round((g.pin_len - 0.2) / g.thread_pitch, 1)}}
 
 
 def build_dial(d: Design, g: BodyGeometry, engrave: bool = True):
@@ -759,9 +814,11 @@ def build_dial(d: Design, g: BodyGeometry, engrave: bool = True):
     body = trimesh.boolean.union([plate, hub], engine="manifold")
 
     cutters = []
-    # roller socket (round) from the top
-    sock = _cyl(g.pin_r + g.clearance, g.socket_depth + 0.01)
-    sock.apply_translation([0, 0, z_top - g.socket_depth / 2 + 0.005])
+    # roller socket from the top: the female of the roller's thread, with a
+    # radial clearance all round and a mouth that opens to the crest
+    sock = _helical_thread(g.pin_r + g.thread_clearance, g.thread_depth, g.thread_pitch, g.socket_depth + 0.01,
+                           fade=(0.0, 1.0), fade_to="crest")
+    sock.apply_translation([0, 0, z_top - g.socket_depth])
     cutters.append(sock)
     # stand socket (D-shaped) from the bottom
     dsock = _cyl(g.pin_r + g.clearance, g.socket_depth + 0.01)
@@ -859,65 +916,188 @@ def _tube(path, radii, sections=48):
     return m
 
 
-def build_stand(d: Design, g: BodyGeometry):
-    """Stand in its own frame: base on z=0, +y towards the elevated pole.
-    A pebble-shaped base and a stem that rises vertically and bends into the
-    polar axis, tapering like the roller; a keyed pin on top."""
+TIP_ANGLE_REQ_DEG = 22.0     # the whole assembly may be tilted this far before it tips
+
+
+def _dial_to_stand(d: Design):
+    """Rotation taking dial-frame vectors into the stand frame."""
+    from . import solar as _solar
+    lat = d.params.lat
+    sgn = 1.0 if lat >= 0 else -1.0
+    frame = _solar.dial_frame(lat)          # rows = dial axes in ENU
+    stand_rot = np.diag([sgn, sgn, 1.0])    # stand -> ENU (its own inverse)
+    return stand_rot @ frame.T
+
+
+def _stand_layout(d: Design, g: BodyGeometry):
     phi = math.radians(abs(d.params.lat))
     phi = max(phi, math.radians(8.0))
     a = np.array([0.0, math.cos(phi), math.sin(phi)])
-    up_side = np.array([0.0, -math.sin(phi), math.cos(phi)])  # = -y_dial
     D0 = dish_depth(g, d)
     R_out = g.R_out
     clearance = 8.0
     L_needed = (R_out * math.cos(phi) + clearance + 10.0) / math.sin(phi) - g.hub_len - D0
     L_stem = float(min(max(L_needed, 0.55 * R_out), 170.0))
-    top = L_stem * a                      # pin base on the polar axis
     centre = (L_stem + g.hub_len + D0) * a
-    y_c = float(centre[1])
-    base_r = max(0.6 * R_out, 40.0, y_c * 0.5 + 8.0)
-    h_b = max(8.0, 0.12 * base_r)
-    y_f = 0.45 * float(top[1])            # the stem leaves the base a little behind its centre
-    base_c = np.array([0.0, y_f, 0.0])
+    return phi, a, L_stem, centre
 
-    # base: a flat-bottomed pebble (revolved superellipse)
-    prof = [(0.0, 0.0), (base_r, 0.0)]
-    for zf in np.linspace(0.0, 1.0, 40)[1:]:
-        prof.append((base_r * (1.0 - zf ** 2.6) ** 0.42, h_b * zf))
-    prof.append((0.0, h_b))
-    base = _revolve(prof, sections=192)
-    base.apply_translation(base_c)
-    def dome_z(r):
-        return h_b * (max(1.0 - (r / base_r) ** (1.0 / 0.42), 0.0)) ** (1.0 / 2.6) if r < base_r else 0.0
 
-    # stem: cubic bezier from the base, vertical at first, ending along the axis
+def load_masses(d: Design, g: BodyGeometry, dial, rollers, dial_info):
+    """Volumes and centres of mass (stand frame) of what the stand carries:
+    the dial and the heavier of the two rollers, screwed in."""
+    phi, a, L_stem, centre = _stand_layout(d, g)
+    Rd = _dial_to_stand(d)
+    loads = []
+    c = dial.center_mass
+    loads.append((float(dial.volume), centre + Rd @ c))
+    best = None
+    for name, m, inf in rollers:
+        z_off = dial_info["hub_top_z"] - g.pin_len
+        cm = m.center_mass + np.array([0.0, 0.0, z_off])
+        if best is None or m.volume > best[0]:
+            best = (float(m.volume), centre + Rd @ cm)
+    if best:
+        loads.append(best)
+    return loads
+
+
+def build_stand(d: Design, g: BodyGeometry, loads=None):
+    """Stand in its own frame: base on z=0, +y towards the elevated pole.
+    An egg-shaped pebble base and a stem that rises vertically and bends
+    into the polar axis, tapering like the roller; a keyed pin on top.
+
+    The pebble is sized from the centre of mass of everything it carries:
+    it grows towards the overhanging dial until the whole assembly could be
+    tilted by TIP_ANGLE_REQ_DEG in any direction before it tips over."""
+    phi, a, L_stem, centre = _stand_layout(d, g)
+    up_side = np.array([0.0, -math.sin(phi), math.cos(phi)])  # = -y_dial
+    R_out = g.R_out
+    top = L_stem * a                      # pin base on the polar axis
+    loads = list(loads or [])
     r0 = g.stem_r
-    # the foot flares out along a quarter round tangent to the pebble, so
-    # stem and base meet without a seam; the stem runs straight up through
-    # that round (tilted rings would poke out of the dome) and only then
-    # bends into the polar axis
+    y_f = 0.45 * float(top[1])            # the stem leaves the pebble at its centre
+    base_c = np.array([0.0, y_f, 0.0])
     f = 1.1 * r0
-    r_meet = 1.75 * r0 + f                         # where the round meets the pebble
-    zf_meet = (max(1.0 - (r_meet / base_r) ** (1.0 / 0.42), 0.0)) ** (1.0 / 2.6)
-    z_meet = h_b * zf_meet - 0.3
-    P0 = base_c + np.array([0.0, 0.0, h_b - 4.0])
-    Pv = np.array([0.0, y_f, z_meet + f + 1.0])
-    H = float(np.linalg.norm(top - Pv))
-    P1 = Pv + np.array([0.0, 0.0, 0.40 * H])
-    P2 = top - a * (0.40 * H)
-    n_v = 24
-    straight = np.array([P0 + (Pv - P0) * t for t in np.linspace(0.0, 1.0, n_v, endpoint=False)])
-    ts = np.linspace(0.0, 1.0, 70)
-    bend = np.array([(1 - t) ** 3 * Pv + 3 * (1 - t) ** 2 * t * P1 + 3 * (1 - t) * t * t * P2 + t ** 3 * top for t in ts])
-    path = np.vstack([straight, bend])
-    # arc length fraction along the whole path drives the taper
-    seg = np.linalg.norm(np.diff(path, axis=0), axis=1)
-    tt = np.concatenate([[0.0], np.cumsum(seg)]); tt /= tt[-1]
-    radii = r0 * (1.75 - 1.45 * tt + 0.85 * tt * tt)     # 1.75 r at the foot, waist, 1.15 r at the top
-    s_up = path[:, 2] - z_meet                     # height above the pebble at the meeting radius
-    u = np.clip(f - s_up, 0.0, f)
-    flare = np.where(s_up < 0.0, f, f - np.sqrt(np.clip(f * f - u * u, 0.0, None)))
-    stem = _tube(path, radii + flare)
+    r_meet = 1.75 * r0 + f                # foot round meets the pebble here
+    tan_req = math.tan(math.radians(TIP_ANGLE_REQ_DEG))
+
+    def pebble_zf(rn):
+        return (max(1.0 - rn ** (1.0 / 0.42), 0.0)) ** (1.0 / 2.6) if rn < 1.0 else 0.0
+
+    S = 96                                # angular sections shared by pebble, round and stem
+
+    def make_body(a_x, a_yp, a_ym, h_b):
+        """Pebble, foot round and stem as ONE surface (no boolean, so the
+        tangential junctions carry no sliver triangles): bottom disc, egg
+        dome from the edge inward, quarter round up into the stem, the stem
+        tube, top cap."""
+        th = np.linspace(0.0, 2 * math.pi, S, endpoint=False)
+        cth, sth = np.cos(th), np.sin(th)
+
+        def dome_pts(r):
+            ky = np.where(sth > 0, a_yp / a_x, a_ym / a_x)
+            blend = _smoothstep((r - r_meet) / max(a_x - r_meet, 1.0))
+            k = 1.0 + (ky - 1.0) * blend            # circular at the foot, egg at the edge
+            x, y = r * cth, r * sth * k
+            rn = np.hypot(x / a_x, y / np.where(y > 0, a_yp, a_ym))
+            z = h_b * np.array([pebble_zf(v) for v in rn])
+            return x, y, z
+
+        z_at_meet = dome_pts(r_meet)[2]
+        z_meet = float(z_at_meet.min()) - 0.3
+        rings = []
+        # dome: from the edge (z = 0) inward to the foot circle, dense near the steep edge
+        n_d = 44
+        for j in range(n_d + 1):
+            u = j / n_d
+            r = a_x - (a_x - r_meet) * (u ** 1.7)
+            x, y, z = dome_pts(r)
+            sink = 1.0 - _smoothstep((r - r_meet) / 14.0)
+            z = z - (z_at_meet - z_meet) * sink      # settle onto the round's outer ring
+            if j == 0:
+                z = np.zeros_like(z)
+            rings.append(np.stack([x, y + y_f, z], -1))
+        # quarter round from the foot circle up into the stem
+        for al in np.linspace(math.pi / 2, 0.0, 12)[1:]:
+            r = r_meet - f * math.cos(al)
+            z = z_meet + f - f * math.sin(al)
+            rings.append(np.stack([r * cth, r * sth + y_f, np.full(S, z)], -1))
+        # stem: vertical for a moment, then a cubic bend into the polar axis
+        Pv = np.array([0.0, y_f, z_meet + f])
+        Pv2 = Pv + np.array([0.0, 0.0, 1.5])
+        H = float(np.linalg.norm(top - Pv2))
+        P1 = Pv2 + np.array([0.0, 0.0, 0.40 * H])
+        P2 = top - a * (0.40 * H)
+        ts = np.linspace(0.0, 1.0, 70)
+        bend = np.array([(1 - t) ** 3 * Pv2 + 3 * (1 - t) ** 2 * t * P1 + 3 * (1 - t) * t * t * P2 + t ** 3 * top for t in ts])
+        path = np.vstack([Pv[None, :], bend])
+        seg = np.linalg.norm(np.diff(path, axis=0), axis=1)
+        tt = np.concatenate([[0.0], np.cumsum(seg)]); tt /= tt[-1]
+        radii = r0 * (1.75 - 1.45 * tt + 0.85 * tt * tt)     # 1.75 r at the foot, waist, 1.15 r at the top
+        w = _smoothstep(tt * float(np.sum(seg)) / 10.0)      # leave the round with no kink
+        radii = (1.0 - w) * 1.75 * r0 + w * radii
+        tang = np.gradient(path, axis=0); tang /= np.linalg.norm(tang, axis=1, keepdims=True)
+        B = np.array([1.0, 0.0, 0.0])
+        for i in range(1, len(path)):
+            N = np.cross(tang[i], B); N /= np.linalg.norm(N)
+            rings.append(path[i] + radii[i] * (cth[:, None] * B + sth[:, None] * N))
+        verts = np.vstack(rings)
+        n_r = len(rings)
+        faces = []
+        for i in range(n_r - 1):
+            o0, o1 = i * S, (i + 1) * S
+            for k in range(S):
+                k1 = (k + 1) % S
+                faces += [[o0 + k, o1 + k, o1 + k1], [o0 + k, o1 + k1, o0 + k1]]
+        c0 = len(verts); verts = np.vstack([verts, [[0.0, y_f, 0.0]]])
+        c1 = len(verts); verts = np.vstack([verts, path[-1][None, :]])
+        base_o = (n_r - 1) * S
+        for k in range(S):
+            k1 = (k + 1) % S
+            faces.append([c0, k1, k])
+            faces.append([c1, base_o + k, base_o + k1])
+        m = trimesh.Trimesh(vertices=verts, faces=np.asarray(faces), process=True)
+        trimesh.repair.fix_normals(m)
+        if m.volume < 0:
+            m.invert()
+        return m
+
+    a_x = max(0.55 * R_out, 40.0)
+    a_yp = a_ym = a_x
+    h_b = max(8.0, 0.11 * a_x)
+    for _ in range(6):
+        body = make_body(a_x, a_yp, a_ym, h_b)
+        parts = loads + [(float(body.volume), np.asarray(body.center_mass))]
+        V = sum(v for v, _ in parts)
+        com = sum(v * np.asarray(c) for v, c in parts) / V
+        need = float(com[2]) * tan_req + 6.0
+        # footprint margins from the centre of mass: along +y, -y and sideways
+        dy = float(com[1]) - y_f
+        dx = abs(float(com[0]))
+        a_yp = max(a_x, dy + need, r_meet + 6.0)
+        a_ym = max(a_x, -dy + need, r_meet + 6.0)
+        chord = math.sqrt(max(1.0 - (dy / (a_yp if dy > 0 else a_ym)) ** 2, 0.0))
+        if a_x * chord - dx < need:
+            a_x = (need + dx) / max(chord, 0.5)
+        h_b = max(8.0, 0.11 * a_x)
+    body = make_body(a_x, a_yp, a_ym, h_b)
+    # final numbers with the body actually built
+    parts = loads + [(float(body.volume), np.asarray(body.center_mass))]
+    V = sum(v for v, _ in parts)
+    com = sum(v * np.asarray(c) for v, c in parts) / V
+    dy = float(com[1]) - y_f
+    dx = abs(float(com[0]))
+    m_x = a_x * math.sqrt(max(1.0 - (dy / (a_yp if dy > 0 else a_ym)) ** 2, 0.0)) - dx
+    margin = min(a_yp - dy, a_ym + dy, m_x)
+    report = {"com": [float(x) for x in com], "margin_mm": float(margin),
+              "tip_angle_deg": float(math.degrees(math.atan2(margin, max(float(com[2]), 1e-6)))),
+              "base_semi_axes": [float(a_x), float(a_yp), float(a_ym)],
+              "required_tip_angle_deg": TIP_ANGLE_REQ_DEG}
+
+    def dome_z(x, y):
+        yy = y - y_f
+        rn = math.hypot(x / a_x, yy / (a_yp if yy > 0 else a_ym))
+        return h_b * pebble_zf(rn)
 
     rot = trimesh.geometry.align_vectors([0, 0, 1.0], a)
     pin = _cyl(g.pin_r, g.pin_len)
@@ -929,30 +1109,37 @@ def build_stand(d: Design, g: BodyGeometry):
     cutbox.apply_translation((L_stem + g.pin_len / 2.0) * a + up_side * (flat + 2 * g.pin_r))
     pin = trimesh.boolean.difference([pin, cutbox], engine="manifold")
 
-    body = trimesh.boolean.union([base, stem, pin], engine="manifold")
+    body = trimesh.boolean.union([body, pin], engine="manifold")
     cutters = []
-    below = trimesh.creation.box((4 * base_r, 4 * base_r, 40.0))
-    below.apply_translation([0, y_f, -20.0])
-    cutters.append(below)
-    # location and zone on the base, on the equator side where the reader stands
-    y_edge = y_f - base_r
-    room = base_r - r0 * 1.9
+    # location and zone on the pebble, on the equator side where the reader stands
+    y_edge = y_f - a_ym
+    room = a_ym - r0 * 1.9
     h1 = min(4.5, max(3.0, room * 0.22))
     h2 = h1 * 0.72
     y1 = y_f - r0 * 2.1 - h1 / 2.0
     y2 = y1 - h1 / 2.0 - 2.0 - h2 / 2.0
+    lines = []
     for text, h, y in [(location_text(d.params.lat, d.params.lon), h1, y1), (d.params.zone_label, h2, y2)]:
         if not text or y - h / 2.0 < y_edge + 6.0:
             continue
+        # the line must fit the pebble's width at its height, with 5 mm to spare
+        chord = 2.0 * a_x * math.sqrt(max(1.0 - ((y - y_f) / a_ym) ** 2, 0.0)) - 10.0
+        polys = _text_polygons(text, h)
+        if not polys:
+            continue
+        width = max(p_.bounds[2] for p_ in polys) - min(p_.bounds[0] for p_ in polys)
+        if width > chord:
+            h = h * chord / width
+        lines.append((text, h, y))
+    for text, h, y in lines:
         # every glyph gets a flat floor tilted to the local dome: the
         # lettering follows the pebble, yet its floors stay clean planes
         for poly in _text_polygons(text, h):
             cx, cy = poly.centroid.x, poly.centroid.y + y
-            rr = math.hypot(cx, cy - y_f)
-            zc = dome_z(rr)
-            dz = (dome_z(rr + 0.05) - dome_z(rr - 0.05)) / 0.1
-            e_r = np.array([cx, cy - y_f, 0.0]) / max(rr, 1e-9)
-            n_c = np.array([0.0, 0.0, 1.0]) - dz * e_r
+            zc = dome_z(cx, cy)
+            gx = (dome_z(cx + 0.05, cy) - dome_z(cx - 0.05, cy)) / 0.1
+            gy = (dome_z(cx, cy + 0.05) - dome_z(cx, cy - 0.05)) / 0.1
+            n_c = np.array([-gx, -gy, 1.0])
             n_c /= np.linalg.norm(n_c)
             prism = trimesh.creation.extrude_polygon(poly, h_b + 4.0)
             prism.apply_translation([0, y, 0.3 * h_b])
@@ -965,7 +1152,8 @@ def build_stand(d: Design, g: BodyGeometry):
                 cutters.append(cut)
     stand = _largest_body(trimesh.boolean.difference([body, trimesh.boolean.union(cutters, engine="manifold")], engine="manifold"))
     info = {"stem_length": L_stem, "dial_centre": centre.tolist(), "axis": a.tolist(),
-            "base_radius": base_r, "base_centre_y": y_f, "tilt_deg": math.degrees(phi)}
+            "base_radius": float(max(a_x, a_yp, a_ym)), "base_semi_axes": [float(a_x), float(a_yp), float(a_ym)],
+            "base_centre_y": y_f, "base_height": h_b, "tilt_deg": math.degrees(phi), "stability": report}
     return stand, info
 
 
@@ -976,7 +1164,7 @@ def build_all(d: Design, g: BodyGeometry | None = None, engrave: bool = True):
     for k, rp in enumerate(d.rollers):
         m, inf = build_roller(d, g, rp, grooves=k + 1)
         rollers.append((rp.name, m, inf))
-    stand, stand_info = build_stand(d, g)
+    stand, stand_info = build_stand(d, g, loads=load_masses(d, g, dial, rollers, dial_info))
     return {"dial": dial, "rollers": rollers, "stand": stand,
             "geometry": g, "dial_info": dial_info, "stand_info": stand_info}
 
