@@ -283,48 +283,78 @@ class PlateSurface:
 
         band_w = g.tick_zone + g.text_h + 6.0
         band = RHO >= g.R_out - band_w
-        W_max = np.where(band, w_max, 1.0).min(axis=0)
-        W_min = np.where(band, w_min, 0.0).max(axis=0)
-        dish_part = W_max >= 0.0
-        blade_part = W_min <= 1.0
-        self._Wmax, self._Wmin = W_max, W_min
-
-        wc = np.zeros(n_a)
+        # Two-dimensional twist field w(rho, az).  Each cell allows w in
+        # [0, w_max] (dish, plate under its crossing rays) or [w_min, 1]
+        # (blade, plate above them).  The field is found by alternating a
+        # blur, a projection onto the cell's allowed set, and a bound on the
+        # rate of change (full twist over at least 24 degrees / 12 mm), so the
+        # surface stays continuous.  Continuity wins over the ray rules; cells
+        # that end up inside a ray are cut away unless they lie in the band.
+        dish_part = w_max >= 0.0
+        blade_part = w_min <= 1.0
+        # seed: blade beyond the outermost cell that cannot be a dish
+        w = np.zeros((n_r, n_a))
         mid = int(np.argmin(np.abs(self.az_grid - self.psi_mid)))
-        no_dish = np.where(~dish_part)[0]
-        if len(no_dish):
-            left = no_dish[no_dish < mid]
-            right = no_dish[no_dish > mid]
+        col_no_dish = (~dish_part & band).any(axis=0)
+        nd = np.where(col_no_dish)[0]
+        if len(nd):
+            left = nd[nd < mid]; right = nd[nd > mid]
             if len(left):
-                wc[:left.max() + 1] = 1.0
+                w[:, :left.max() + 1] = 1.0
             if len(right):
-                wc[right.min():] = 1.0
+                w[:, right.min():] = 1.0
 
         def project(v):
-            out = v.copy()
-            for j in range(n_a):
-                cands = []
-                if dish_part[j]:
-                    cands.append(min(max(v[j], 0.0), W_max[j]))
-                if blade_part[j]:
-                    cands.append(min(max(v[j], W_min[j]), 1.0))
-                if not cands:
-                    cands.append(0.0)
-                out[j] = min(cands, key=lambda x: abs(x - v[j]))
+            lo_d = np.clip(v, 0.0, np.maximum(w_max, 0.0))          # nearest point of [0, w_max]
+            lo_b = np.clip(v, np.minimum(w_min, 1.0), 1.0)          # nearest point of [w_min, 1]
+            d_d = np.where(dish_part, np.abs(v - lo_d), np.inf)
+            d_b = np.where(blade_part, np.abs(v - lo_b), np.inf)
+            out = np.where(d_d <= d_b, lo_d, lo_b)
+            out = np.where(dish_part | blade_part, out, v)          # unconstrained cells keep the blur
             return out
 
-        wc = project(wc)
-        kern = np.array([0.25, 0.5, 0.25])
-        for _ in range(int(10.0 / d_az) * 3):
-            wc = project(np.convolve(np.pad(wc, 1, mode="edge"), kern, mode="valid"))
-        wc = np.clip(wc, 0.0, 1.0)
-        w = np.ones((n_r, 1)) * wc[None, :]
+        step_az = d_az / 8.0       # max change of w per column (full twist over 8 degrees)
+        step_r = d_rho / 6.0       # max change of w per row (full twist over 6 mm)
+
+        def lower_envelope(v, sa, sr, n_iter=800):
+            # largest field <= v whose change per cell is bounded (only ever
+            # lowers values, so a dish can only get deeper, a blade lower);
+            # iterated to convergence so no step survives anywhere
+            v = v.copy()
+            v[:, 0] = v[:, 1]; v[:, -1] = v[:, -2]          # no wrap-around coupling
+            for _ in range(n_iter):
+                prev = v
+                v = np.minimum(v, np.roll(v, 1, axis=1) + sa)
+                v = np.minimum(v, np.roll(v, -1, axis=1) + sa)
+                v = np.minimum(v, np.roll(v, 1, axis=0) + sr)
+                v = np.minimum(v, np.roll(v, -1, axis=0) + sr)
+                v[0, :] = v[1, :]; v[-1, :] = v[-2, :]; v[:, 0] = v[:, 1]; v[:, -1] = v[:, -2]
+                if np.abs(v - prev).max() < 1e-6:
+                    break
+            return v
+
+        # smooth the two base surfaces the same way (rasterised rays leave stairs)
+        z_blade = lower_envelope(z_blade, 0.35, 0.35)
+        z_dish = np.maximum(lower_envelope(z_dish, 0.6, 0.6), -self.D0 - 2.0)
+
+        def blur(v):
+            out = v.copy()
+            out[:, 1:-1] = 0.25 * v[:, :-2] + 0.5 * v[:, 1:-1] + 0.25 * v[:, 2:]
+            out[1:-1, :] = 0.25 * out[:-2, :] + 0.5 * out[1:-1, :] + 0.25 * out[2:, :]
+            return out
+
+        w = project(w)
+        for _ in range(60):
+            w = project(blur(w))
+            w = lower_envelope(w, step_az, step_r, 3)
+        # continuity last: bounded rate of change everywhere
+        w = lower_envelope(w, step_az, step_r)
+        w = np.clip(w, 0.0, 1.0)
         z_top = (1.0 - w) * z_dish + w * z_blade
         thick = (1.0 - w) * g.plate_t + w * t_b
         fits = (~has_cross | (z_top <= floor_cross - 0.9) | (z_top - thick >= ceil_f + 0.2)) \
             & (z_top <= floor_own - 0.2)
         valid = fits | band
-
         # inner edge per column: contiguous from the rim, then styled edge
         rho_in = np.full(n_a, g.R_out)
         for j in range(n_a):
@@ -334,9 +364,15 @@ class PlateSurface:
                 k0 -= 1
             rho_in[j] = self.rho_grid[k0]
         raw = np.maximum(rho_in, self.rho_in_design(self.az_grid))
-        kk = int(8.0 / d_az) | 1
-        rho_in = np.convolve(np.pad(raw, kk // 2, mode="edge"), np.ones(kk) / kk, mode="valid")
-        rho_in = np.maximum(rho_in, raw)
+        # the inner edge may only move outward by at most 1 mm per half
+        # degree: widening a cut is always safe, so notches become sweeps
+        rho_in = raw.copy()
+        for _ in range(int(80 / d_az)):
+            rho_in = np.maximum(rho_in, np.maximum(np.roll(rho_in, 1) - 1.0, np.roll(rho_in, -1) - 1.0))
+            rho_in[0], rho_in[-1] = raw[0], raw[-1]
+            rho_in = np.maximum(rho_in, raw)
+        kk = int(6.0 / d_az) | 1
+        rho_in = np.maximum(np.convolve(np.pad(rho_in, kk // 2, mode="edge"), np.ones(kk) / kk, mode="valid"), rho_in)
         self._rho_in = np.minimum(rho_in, g.R_out - 0.4)
         self._z_top = z_top
         self._thick = thick
@@ -730,4 +766,24 @@ def shadowed_days_report(d: Design, g: BodyGeometry, surf: "PlateSurface"):
         label = ", ".join(f"{fmt(r[0])}-{fmt(r[-1])}" if len(r) > 1 else fmt(r[0]) for r in runs)
         out.append({"from": grp[0].strftime("%d %b"), "to": grp[-1].strftime("%d %b"),
                     "days": len(grp), "hours": label})
+    return out
+
+
+def continuity_report(parts: dict):
+    """Proof that every part is one continuous solid: watertight, a single
+    connected component, and (for the dial) a bounded height step between
+    neighbouring surface samples of the plate field."""
+    out = {}
+    for name, mesh in [("dial", parts["dial"]), ("stand", parts["stand"])] + [(n, m) for n, m, _ in parts["rollers"]]:
+        comps = mesh.split(only_watertight=False)
+        out[name] = {"watertight": bool(mesh.is_watertight), "components": int(len(comps)),
+                     "volume_mm3": float(mesh.volume), "faces": int(len(mesh.faces))}
+    surf = parts["dial_info"]["surface"]
+    z = surf._z_top
+    keep = surf.rho_grid[:, None] >= surf._rho_in[None, :]
+    dz_az = np.abs(np.diff(z, axis=1)); dz_r = np.abs(np.diff(z, axis=0))
+    m_az = keep[:, 1:] & keep[:, :-1]; m_r = keep[1:, :] & keep[:-1, :]
+    out["dial"]["max_step_mm_per_half_degree"] = float(dz_az[m_az].max()) if m_az.any() else 0.0
+    out["dial"]["max_step_mm_per_half_mm"] = float(dz_r[m_r].max()) if m_r.any() else 0.0
+    out["dial"]["max_inner_edge_step_mm"] = float(np.abs(np.diff(surf._rho_in)).max())
     return out
