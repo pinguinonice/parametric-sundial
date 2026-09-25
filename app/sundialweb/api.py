@@ -26,7 +26,7 @@ WEB_DIR = Path(__file__).resolve().parent.parent.parent / "web"
 CACHE_DIR = Path(os.environ.get("SUNDIAL_CACHE", os.path.join(tempfile.gettempdir(), "sundial-web")))
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-CACHE_VERSION = "5"  # bump when the geometry changes so cached results are rebuilt
+CACHE_VERSION = "6"  # bump when the geometry changes so cached results are rebuilt
 
 app = FastAPI(title="Bernhardt sundial generator", version="1.0")
 

@@ -257,17 +257,51 @@ class PlateSurface:
         dish = self.dish_z(RHO)
         t_b = self.t_blade
 
-        # dish option: the styled dish, deepened a little where a ray runs
-        # under it (never more than 6 mm, never below the hub top)
-        need = np.minimum(floor_own - 0.3, floor_cross - 1.0)
-        deepen = np.clip(dish - need, 0.0, 6.0) * np.clip((R - RHO) / 8.0, 0.0, 1.0)
-        z_dish = dish - deepen
-        dish_ok = (z_dish >= -self.D0 - 2.0) & (z_dish <= need + 1e-6)
-        # blade option: in the scale plane, sloping down only where a mark's
-        # own low rays demand it; must clear the crossing rays from above
-        z_blade = np.minimum(0.0, floor_own - 0.3)
+        # Both base surfaces are built smooth by construction and fitted
+        # under the rays column by column, instead of cell by cell, so no
+        # rasterisation texture reaches the printed part.
+        need_own = floor_own - 0.3
+        need = np.minimum(need_own, floor_cross - 1.0)
+        n_cells_per_deg = 1.0 / d_az
+
+        def upper_envelope_1d(v, step):
+            # smallest curve >= v whose change per cell is bounded (safe: deeper)
+            v = v.copy()
+            for _ in range(len(v)):
+                prev = v
+                v = np.maximum(v, np.maximum(np.roll(v, 1) - step, np.roll(v, -1) - step))
+                v[0], v[-1] = max(v[0], v[1] - step), max(v[-1], v[-2] - step)
+                if np.abs(v - prev).max() < 1e-9:
+                    break
+            return v
+
+        def blur_1d(v, n):
+            for _ in range(n):
+                v = 0.25 * np.roll(v, 1) + 0.5 * v + 0.25 * np.roll(v, -1)
+            return v
+
+        # blade: a cone per column, z = -k(az) * (R - rho), k as steep as the
+        # column's own rays require, k(az) smooth along the ring
+        radial = np.clip(R - RHO, 0.0, None)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            k_cells = np.where(np.isfinite(need_own) & (radial > 1.0), -need_own / np.maximum(radial, 1.0), 0.0)
+        k = np.clip(k_cells, 0.0, 2.5).max(axis=0)
+        k = upper_envelope_1d(k, 0.03)
+        k = blur_1d(k, 6) + 0.01
+        z_blade = -k[None, :] * radial
         ceil_f = np.where(np.isfinite(ceil_cross), ceil_cross, -np.inf)
         blade_ok = ~has_cross | (z_blade - t_b >= ceil_f + 0.3)
+
+        # dish: the styled dish scaled by a per-column factor m(az) >= 1 so
+        # that it ducks under the rays; m smooth along the ring, at most 1.15
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ratio = np.where(np.isfinite(need) & (dish < -0.5), need / dish, 1.0)
+        m = np.clip(np.clip(ratio, 1.0, 1.15).max(axis=0), 1.0, 1.15)
+        m = np.minimum(upper_envelope_1d(m, 0.004), 1.15)
+        m = np.minimum(blur_1d(m, 6) + 0.002, 1.15)
+        z_dish = np.maximum(m[None, :] * dish, -self.D0 - 2.0)
+        dish_ok = (z_dish <= need + 1e-6) | ~np.isfinite(need)
+        dish_ok &= z_dish >= -self.D0 - 2.0
 
         # per-cell bounds on the twist weight w (0 dish .. 1 blade)
         span = np.maximum(z_blade - z_dish, 1e-6)
@@ -333,10 +367,6 @@ class PlateSurface:
                     break
             return v
 
-        # smooth the two base surfaces the same way (rasterised rays leave stairs)
-        z_blade = lower_envelope(z_blade, 0.35, 0.35)
-        z_dish = np.maximum(lower_envelope(z_dish, 0.6, 0.6), -self.D0 - 2.0)
-
         def blur(v):
             out = v.copy()
             out[:, 1:-1] = 0.25 * v[:, :-2] + 0.5 * v[:, 1:-1] + 0.25 * v[:, 2:]
@@ -347,8 +377,12 @@ class PlateSurface:
         for _ in range(60):
             w = project(blur(w))
             w = lower_envelope(w, step_az, step_r, 3)
-        # continuity last: bounded rate of change everywhere
+        # continuity last: bounded rate of change everywhere, then a soft
+        # blur so the fold has no creases (cells this pushes into a ray are
+        # cut below, or accepted in the band)
         w = lower_envelope(w, step_az, step_r)
+        for _ in range(6):
+            w = blur(w)
         w = np.clip(w, 0.0, 1.0)
         z_top = (1.0 - w) * z_dish + w * z_blade
         thick = (1.0 - w) * g.plate_t + w * t_b
@@ -786,4 +820,9 @@ def continuity_report(parts: dict):
     out["dial"]["max_step_mm_per_half_degree"] = float(dz_az[m_az].max()) if m_az.any() else 0.0
     out["dial"]["max_step_mm_per_half_mm"] = float(dz_r[m_r].max()) if m_r.any() else 0.0
     out["dial"]["max_inner_edge_step_mm"] = float(np.abs(np.diff(surf._rho_in)).max())
+    # roughness: second difference of the height field (a crease or dimple
+    # shows up here even when every single step is small)
+    d2a = np.abs(z[:, 2:] - 2 * z[:, 1:-1] + z[:, :-2]); ma = keep[:, 2:] & keep[:, 1:-1] & keep[:, :-2]
+    d2r = np.abs(z[2:, :] - 2 * z[1:-1, :] + z[:-2, :]); mr2 = keep[2:, :] & keep[1:-1, :] & keep[:-2, :]
+    out["dial"]["max_curvature_mm"] = float(max(d2a[ma].max() if ma.any() else 0.0, d2r[mr2].max() if mr2.any() else 0.0))
     return out

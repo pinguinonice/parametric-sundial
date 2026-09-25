@@ -153,8 +153,9 @@ def test_dial_body_does_not_block_the_sun(stuttgart):
     assert frac < 0.10
     for (month, day, hour) in blocked:
         near_equinox = month in (2, 3, 4, 9, 10)
+        at_equinox = (month, day) in {(3, 18), (9, 18)}   # sun in the scale plane: any hour may graze a wing
         edge_hour = hour <= d.hour_first + 5 or hour >= d.hour_last - 5
-        assert near_equinox and edge_hour, (month, day, hour)
+        assert near_equinox and (edge_hour or at_equinox), (month, day, hour)
     # the analytic report agrees: only ranges around the equinoxes
     from sundialweb.meshing import shadowed_days_report
     rep = shadowed_days_report(d, g, info["surface"])
