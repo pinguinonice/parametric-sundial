@@ -19,6 +19,7 @@ const fmtMins = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(
 const fmtDate = (y, mo, d, opts = { day: 'numeric', month: 'long' }) => new Date(Date.UTC(y, mo - 1, d)).toLocaleDateString(lang(), { ...opts, timeZone: 'UTC' });
 const rollerLabels = () => { const f = (m, d) => new Date(Date.UTC(2026, m, d)).toLocaleDateString(lang(), { day: 'numeric', month: 'short', timeZone: 'UTC' }); return { roller_1: { name: 'I', top: f(5, 21), bottom: f(11, 21) }, roller_2: { name: 'II', top: f(5, 21), bottom: f(11, 21) } }; };
 const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* blocked */ } } };
+const SESSION_ID = (() => { let id = store.get('sundial-session'); if (!id) { id = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join(''); store.set('sundial-session', id); } return id; })();
 const session = { get(k) { try { return JSON.parse(sessionStorage.getItem(k)); } catch (e) { return null; } }, set(k, v) { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* blocked */ } } };
 
 function currentParams() {
@@ -123,6 +124,17 @@ function compactWhere(on) {
   $('againBtn').textContent = t('anotherPlace');
 }
 
+// the page's own shadows follow the sun of the moment shown in the viewer
+function sunShadow(r) {
+  const root = document.documentElement.style;
+  if (!r || !r.up) { root.setProperty('--sx', '0px'); root.setProperty('--sy', '8px'); root.setProperty('--sblur', '30px'); root.setProperty('--salpha', '0.10'); return; }
+  const elev = Math.max(3, r.elev) * Math.PI / 180, az = r.az * Math.PI / 180;
+  const len = Math.min(34, 5 / Math.tan(elev));                      // long shadows at low sun
+  const sx = -Math.sin(az) * len, sy = Math.cos(az) * len;           // north is up on the page; the shadow falls away from the sun
+  root.setProperty('--sx', `${sx.toFixed(1)}px`); root.setProperty('--sy', `${sy.toFixed(1)}px`);
+  root.setProperty('--sblur', `${(18 + len * 1.2).toFixed(0)}px`); root.setProperty('--salpha', (0.14 + 0.16 * Math.min(1, r.elev / 45)).toFixed(2));
+}
+
 // the last dial anyone made, as the opening picture; the sun loops through its day
 async function loadHero() {
   try {
@@ -160,7 +172,7 @@ function heroLoop() {
   const tick = (ts) => {
     if (!state.hero) return;
     const k = reduce ? 0.5 : ((ts - t0) % dur) / dur;
-    stage.setTime(y, mo, d, Math.round(start + (end - start) * k), 'auto', false);
+    sunShadow(stage.setTime(y, mo, d, Math.round(start + (end - start) * k), 'auto', false));
     state.heroLoop = requestAnimationFrame(tick);
   };
   state.heroLoop = requestAnimationFrame(tick);
@@ -246,7 +258,7 @@ async function generate(bodyOverride) {
   const body = bodyOverride || requestBody();
   startMaking(body);
   try {
-    const r = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const r = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Sundial-Session': SESSION_ID }, body: JSON.stringify(body) });
     if (r.status === 429) throw new Error(t('stBusy', { e: (await r.json()).detail }));
     if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
     const start = await r.json();
@@ -363,6 +375,7 @@ function update() {
   if (!state.info) return;
   const [y, mo, d] = dateParts();
   const r = stage.setTime(y, mo, d, mins, $('rollerSel').value, $('explode').checked);
+  sunShadow(r);
   const p = state.info.params;
   const dateTxt = fmtDate(y, mo, d);
   const status = !r.up ? t('below') : !r.inRange ? t('outside') : t('inPlace', { n: r.roller === 'roller_1' ? 'I' : 'II' });
@@ -477,6 +490,33 @@ function openPart(key, info, slug) {
 }
 $('partView').addEventListener('close', () => { if (state.partStage) { state.partStage(); state.partStage = null; } });
 $('dlZip').addEventListener('click', () => { $('thanks').hidden = false; });
+$('donate').addEventListener('click', () => $('coffee').showModal());
+let historyMap = null;
+async function openHistory() {
+  $('history').showModal();
+  try {
+    const h = await (await fetch('/api/history')).json();
+    $('historyCount').textContent = h.count ? t('historyCount', { n: h.count, p: h.places }) : t('historyEmpty');
+    if (!historyMap) {
+      historyMap = L.map('historyMap', { zoomControl: false, worldCopyJump: true }).setView([20, 0], 1);
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 12, attribution: '&copy; OpenStreetMap' }).addTo(historyMap);
+      historyMap.dots = L.layerGroup().addTo(historyMap);
+    }
+    historyMap.dots.clearLayers();
+    const byPlace = new Map();
+    for (const it of h.items) { const k = `${it.lat},${it.lon}`; const e = byPlace.get(k) || { ...it, n: 0 }; e.n++; e.t = Math.max(e.t, it.t); if (it.place) e.place = it.place; byPlace.set(k, e); }
+    const list = $('historyList'); list.innerHTML = '';
+    for (const e of [...byPlace.values()].sort((a, b) => b.t - a.t)) {
+      const when = new Date(e.t * 1000).toLocaleDateString(lang(), { day: 'numeric', month: 'short' });
+      L.circleMarker([e.lat, e.lon], { radius: 5 + Math.min(6, Math.sqrt(e.n) * 2), color: '#B4842A', fillColor: '#B4842A', fillOpacity: 0.55, weight: 1 })
+        .bindPopup(`${e.place || `${e.lat}, ${e.lon}`}<br>${e.n > 1 ? e.n + ' · ' : ''}${e.mm ? e.mm + ' mm · ' : ''}${when}`).addTo(historyMap.dots);
+      const li = document.createElement('li'); li.innerHTML = `<span>${e.place || `${e.lat}°, ${e.lon}°`}${e.n > 1 ? ` ×${e.n}` : ''}</span><span>${when}</span>`; list.appendChild(li);
+    }
+    const pts = [...byPlace.values()].map((e) => [e.lat, e.lon]);
+    setTimeout(() => { historyMap.invalidateSize(); if (pts.length) historyMap.fitBounds(L.latLngBounds(pts).pad(0.6), { maxZoom: 4 }); }, 80);
+  } catch (e) { $('historyCount').textContent = t('stSearchFail'); }
+}
+$('historyBtn').addEventListener('click', openHistory);
 $('shareBtn').addEventListener('click', async () => {
   const p = state.info ? state.info.params : requestBody();
   const url = `${location.origin}${location.pathname}#at=${p.lat.toFixed(4)},${p.lon.toFixed(4)},${Math.round(p.scale_radius * 2)},${p.year},${encodeURIComponent(p.place_name || '')}`;
@@ -564,7 +604,7 @@ if (STATIC) {
         await setLocation(b.lat, b.lon, { name: b.place_name });
         $('dia').value = Math.round(b.scale_radius * 2); $('year').value = b.year;
         startMaking(b);
-        const start = await (await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) })).json();
+        const start = await (await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Sundial-Session': SESSION_ID }, body: JSON.stringify(b) })).json();
         if (start.cached) onResult(start.info); else followJob(start.job, start.estimates, start.stages, b);
       } else { session.set('sundial-job', null); await setLocation(DEFAULTS.lat, DEFAULTS.lon, { name: 'Stuttgart, Deutschland' }); }
     } else if (last && Number.isFinite(last.lat)) {

@@ -389,6 +389,54 @@ def _latest_path():
     return CACHE_DIR / "latest.json"
 
 
+def _log_path():
+    return CACHE_DIR / "creations.jsonl"
+
+
+def _log_creation(req: GenerateRequest, session: str, client: str, cached: bool):
+    """Internal log of every dial asked for: one JSON line each.  The session
+    and client are hashed; the log never leaves the server as is."""
+    rec = {"t": round(time.time(), 1), "lat": round(req.lat, 4), "lon": round(req.lon, 4), "place": req.place_name[:80],
+           "mm": int(round(2 * req.scale_radius)), "year": req.year, "cached": cached,
+           "session": hashlib.sha1(("s:" + session).encode()).hexdigest()[:12] if session else "",
+           "client": hashlib.sha1(("c:" + client).encode()).hexdigest()[:12] if client else ""}
+    try:
+        with _log_path().open("a") as f:
+            f.write(json.dumps(rec) + "\n")
+    except Exception:
+        pass
+
+
+HISTORY_MIN_GAP_S = 60.0   # on the public map a session places at most one dial per minute
+
+
+@app.get("/api/history")
+def api_history(limit: int = 500):
+    """Where dials have been made so far, for the map: coordinates rounded
+    to a tenth of a degree, no identities, at most one entry per session
+    per minute."""
+    rows = []
+    try:
+        for line in _log_path().read_text().splitlines():
+            try:
+                rows.append(json.loads(line))
+            except Exception:
+                continue
+    except Exception:
+        rows = []
+    last_by_session = {}
+    out = []
+    for r in rows:
+        sid = r.get("session") or r.get("client") or ""
+        if sid and r["t"] - last_by_session.get(sid, -1e12) < HISTORY_MIN_GAP_S:
+            continue
+        if sid:
+            last_by_session[sid] = r["t"]
+        out.append({"lat": round(r["lat"], 1), "lon": round(r["lon"], 1), "place": r.get("place", ""), "mm": r.get("mm"), "t": int(r["t"])})
+    places = {(p["lat"], p["lon"]) for p in out}
+    return {"count": len(out), "places": len(places), "items": out[-limit:]}
+
+
 def _note_latest(info):
     """Remember the dial most recently asked for, so newcomers see a real one."""
     try:
@@ -465,6 +513,8 @@ def _worker():
             info = generate(job["req"], progress)
             _record_timings(marks)
             _note_latest(info)
+            if job.get("session") or job.get("client"):   # the warm-up dial is not a creation
+                _log_creation(job["req"], job.get("session", ""), job.get("client", ""), cached=False)
             with _jobs_lock:
                 job["status"] = "done"; job["info"] = info; job["done_stages"] = list(STAGES); job["stage"] = None
         except Exception as exc:
@@ -513,15 +563,17 @@ def api_generate(req: GenerateRequest, request: Request):
     """Start (or find) a build.  Cached results come back at once as
     {"cached": true, "info": ...}; otherwise {"cached": false, "job": id,
     "estimates": {...}} and the job is followed on /api/jobs/{id}."""
+    client = (request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "")) if request else ""
+    session = request.headers.get("x-sundial-session", "")[:64] if request else ""
     hit = _cached(req)
     if hit:
         _note_latest(hit)
+        _log_creation(req, session, client, cached=True)
         return {"cached": True, "info": hit}
-    client = (request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "")) if request else ""
-    return _start_job(req, client)
+    return _start_job(req, client, session)
 
 
-def _start_job(req: GenerateRequest, client: str = ""):
+def _start_job(req: GenerateRequest, client: str = "", session: str = ""):
     _prune_jobs()
     _ensure_worker()
     with _jobs_lock:
@@ -534,7 +586,7 @@ def _start_job(req: GenerateRequest, client: str = ""):
         if len(pending) >= MAX_QUEUE:
             raise HTTPException(429, "the workshop is full right now; try again in a few minutes")
         jid = uuid.uuid4().hex[:12]
-        _jobs[jid] = {"req": req, "key": _cache_key(req), "status": "queued", "created": time.time(), "done_stages": [], "client": client}
+        _jobs[jid] = {"req": req, "key": _cache_key(req), "status": "queued", "created": time.time(), "done_stages": [], "client": client, "session": session}
     _job_queue.put(jid)
     return {"cached": False, "job": jid, "estimates": stage_estimates(), "stages": STAGES}
 

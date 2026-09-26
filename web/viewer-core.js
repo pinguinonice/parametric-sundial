@@ -104,7 +104,7 @@ export function createStage(canvas) {
   camera.up.set(0, 0, 1);
   const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.49; controls.minDistance = 120; controls.maxDistance = 900;
-  scene.add(new THREE.HemisphereLight(0xfff8ee, 0xc9bda6, 0.75));   // sky and a warm ground bounce so undersides read
+  scene.add(new THREE.HemisphereLight(0xfff8ee, 0x9a9184, 0.75));   // sky and a warm ground bounce so undersides read
   const sun = new THREE.DirectionalLight(0xfff1d6, 2.6);
   sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
   Object.assign(sun.shadow.camera, { left: -230, right: 230, top: 230, bottom: -230, near: 10, far: 1600 });
@@ -114,7 +114,7 @@ export function createStage(canvas) {
   // ground: a stone disc with a soft radial gradient, receives the shadow
   const gc = document.createElement('canvas'); gc.width = gc.height = 512;
   const gx = gc.getContext('2d'); const grad = gx.createRadialGradient(256, 256, 40, 256, 256, 256);
-  grad.addColorStop(0, '#e6dfd0'); grad.addColorStop(0.7, '#d7cfbd'); grad.addColorStop(1, '#c9c0ad');
+  grad.addColorStop(0, '#a8a093'); grad.addColorStop(0.7, '#968e81'); grad.addColorStop(1, '#847c70');
   gx.fillStyle = grad; gx.fillRect(0, 0, 512, 512);
   const gtex = new THREE.CanvasTexture(gc); gtex.colorSpace = THREE.SRGBColorSpace;
   const ground = new THREE.Mesh(new THREE.CircleGeometry(520, 96), new THREE.MeshStandardMaterial({ map: gtex, roughness: 0.95, metalness: 0 }));

@@ -346,6 +346,23 @@ Ideas from Philipp, to be worked in gradually with a commit per step:
   desktop screenshots of each beat and fix what looks wrong before moving
   to the next story. Mobile first, desktop kept in mind.
 
+* **B6 · Shadows follow the sun.** *Done:* the page's card and button
+  shadows take direction and length from the sun of the moment shown in
+  the viewer (long at low sun, soft and centred at night).
+* **B7 · Dial map.** *Done:* a quiet "Dial map" link in the top bar opens
+  a map of where dials have been made, one entry per session per minute,
+  coordinates rounded to a tenth of a degree, no identities. Every
+  creation is logged internally to `creations.jsonl` in the cache dir.
+* **B8 · Coffee, not donate.** *Done:* the button reads "Buy us a coffee ·
+  and help keep this site online"; a tap opens a short note on the server
+  cost before the PayPal link. Nothing is gated.
+* **B9 · Render contrast.** *Done:* the floor is a darker stone so the
+  light dial reads against it; keep checking every render for elegant but
+  clear contrast.
+* **B10 · Working style.** Ideas arrive while building; they are noted
+  here and folded into the plan, the current increment is finished and
+  committed first, then the next one is picked from this list.
+
 ## Order of work
 
 Three slices. Each leaves the site working and shippable.

@@ -6,6 +6,7 @@ export const RTL = new Set(['ar']);
 const S = {};
 
 S.en = {
+  donate: 'Buy us a coffee', donateSub: 'and help keep this site online', coffeeH: 'Why a coffee?', coffeeP1: 'Every dial here is computed from scratch on a rented server, about a minute of work each, and the server bill comes every month whether one person visits or a thousand.', coffeeP2: 'A coffee’s worth keeps it online for the next visitor. Nothing is locked behind it: the files are yours either way.', coffeeGo: 'Buy a coffee, €1 via PayPal', coffeeNo: 'Maybe later', historyLink: 'Dial map', historyH: 'Dials made so far', historyCount: '{n} dials for {p} places', historyEmpty: 'None yet. Yours could be the first.',
   heroEyebrow: 'Fresh from the workshop', heroText: '{place} · made {ago} · there it is {t}', agoNow: 'just now', agoMin: '{n} min ago', agoH: '{n} h ago', agoD: '{n} days ago', stBusy: 'The workshop is busy: {e}',
   whyEyebrow: 'Why this works',
   axisEot: 'sun early  ←  equation of time  →  sun late', axisDecl: 'height of the sun', scalePlane: 'scale plane',
@@ -93,7 +94,7 @@ S.en = {
   shLine: 'The far wing shades the first or last hour {x}.',
   details: 'All the numbers', adjust: 'Adjust the dial', detailsH: 'Your dial in numbers', settingsH: 'Adjust the dial', reset: 'Defaults', regenerate: 'Regenerate', summer: 'Summer label',
   fTip: 'Tips over at', fTipV: '{a}° of tilt', fThread: 'Roller thread', fThreadV: '{p} mm pitch, {c} mm clearance',
-  dlZip: 'Download the sundial', dlZipSub: 'ZIP · 4 parts · {mb} MB', donate: '€1 for the maker', donateSub: 'Optional. The files are yours either way.',
+  dlZip: 'Download the sundial', dlZipSub: 'ZIP · 4 parts · {mb} MB', 
   thanks: 'Thank you for printing one.', dlNote: 'STL files for any printer · fits a {bed} mm bed',
   previewParts: 'Preview the parts on the print bed', printNotes: 'Print notes', dlThis: 'Download this part',
   pn1: '0.15 to 0.2 mm layers; any PLA or PETG. The dial reads best in a light colour, the rollers in a dark one.',
@@ -109,6 +110,7 @@ S.en = {
 };
 
 S.de = {
+  donate: 'Spendier uns einen Kaffee', donateSub: 'und hilf, die Seite online zu halten', coffeeH: 'Warum ein Kaffee?', coffeeP1: 'Jede Uhr hier wird auf einem gemieteten Server von Grund auf berechnet, etwa eine Minute Arbeit pro Stück, und die Serverrechnung kommt jeden Monat, ob eine Person vorbeischaut oder tausend.', coffeeP2: 'Der Preis eines Kaffees hält die Seite für den nächsten Besucher online. Nichts ist dahinter verschlossen: Die Dateien gehören dir so oder so.', coffeeGo: 'Kaffee spendieren, 1 € via PayPal', coffeeNo: 'Vielleicht später', historyLink: 'Uhrenkarte', historyH: 'Bisher gebaute Uhren', historyCount: '{n} Uhren für {p} Orte', historyEmpty: 'Noch keine. Deine könnte die erste sein.',
   heroEyebrow: 'Frisch aus der Werkstatt', heroText: '{place} · gebaut {ago} · dort ist es {t}', agoNow: 'gerade eben', agoMin: 'vor {n} min', agoH: 'vor {n} h', agoD: 'vor {n} Tagen', stBusy: 'Die Werkstatt ist beschäftigt: {e}',
   whyEyebrow: 'Warum das funktioniert',
   axisEot: 'Sonne zu früh  ←  Zeitgleichung  →  Sonne zu spät', axisDecl: 'Höhe der Sonne', scalePlane: 'Ebene der Skala',
@@ -194,7 +196,7 @@ S.de = {
   shLine: 'Der ferne Flügel beschattet die erste oder letzte Stunde {x}.',
   details: 'Alle Zahlen', adjust: 'Uhr anpassen', detailsH: 'Deine Uhr in Zahlen', settingsH: 'Uhr anpassen', reset: 'Standard', regenerate: 'Neu bauen', summer: 'Sommerzeit-Kürzel',
   fTip: 'Kippt bei', fTipV: '{a}° Neigung', fThread: 'Walzengewinde', fThreadV: '{p} mm Steigung, {c} mm Spiel',
-  dlZip: 'Sonnenuhr herunterladen', dlZipSub: 'ZIP · 4 Teile · {mb} MB', donate: '1 € für den Macher', donateSub: 'Freiwillig. Die Dateien gehören dir so oder so.',
+  dlZip: 'Sonnenuhr herunterladen', dlZipSub: 'ZIP · 4 Teile · {mb} MB', 
   thanks: 'Danke, dass du eine druckst.', dlNote: 'STL-Dateien für jeden Drucker · passt auf ein {bed}-mm-Bett',
   previewParts: 'Die Teile auf dem Druckbett ansehen', printNotes: 'Druckhinweise', dlThis: 'Dieses Teil herunterladen',
   pn1: '0,15 bis 0,2 mm Schichten; PLA oder PETG. Das Zifferblatt liest sich hell am besten, die Walzen dunkel.',
@@ -210,6 +212,7 @@ S.de = {
 };
 
 S.es = {
+  donate: 'Invítanos a un café', donateSub: 'y ayuda a mantener esta web en línea', coffeeH: '¿Por qué un café?', coffeeP1: 'Cada reloj se calcula desde cero en un servidor alquilado, cerca de un minuto de trabajo cada uno, y la factura del servidor llega cada mes, visite una persona o mil.', coffeeP2: 'El precio de un café la mantiene en línea para el siguiente visitante. Nada queda bloqueado: los archivos son tuyos de todos modos.', coffeeGo: 'Invitar a un café, 1 € por PayPal', coffeeNo: 'Quizá luego', historyLink: 'Mapa', historyH: 'Relojes hechos hasta ahora', historyCount: '{n} relojes para {p} lugares', historyEmpty: 'Todavía ninguno. El tuyo podría ser el primero.',
   heroEyebrow: 'Recién salido del taller', heroText: '{place} · hecho {ago} · allí son las {t}', agoNow: 'ahora mismo', agoMin: 'hace {n} min', agoH: 'hace {n} h', agoD: 'hace {n} días', stBusy: 'El taller está ocupado: {e}',
   whyEyebrow: 'Por qué funciona',
   axisEot: 'sol adelantado  ←  ecuación del tiempo  →  sol atrasado', axisDecl: 'altura del sol', scalePlane: 'plano de la escala',
@@ -295,7 +298,7 @@ S.es = {
   shLine: 'El ala lejana sombrea la primera o la última hora {x}.',
   details: 'Todos los números', adjust: 'Ajustar el reloj', detailsH: 'Tu reloj en números', settingsH: 'Ajustar el reloj', reset: 'Valores por defecto', regenerate: 'Volver a generar', summer: 'Etiqueta de verano',
   fTip: 'Vuelca a', fTipV: '{a}° de inclinación', fThread: 'Rosca del rodillo', fThreadV: 'paso {p} mm, holgura {c} mm',
-  dlZip: 'Descargar el reloj de sol', dlZipSub: 'ZIP · 4 piezas · {mb} MB', donate: '1 € para el autor', donateSub: 'Opcional. Los archivos son tuyos de todos modos.',
+  dlZip: 'Descargar el reloj de sol', dlZipSub: 'ZIP · 4 piezas · {mb} MB', 
   thanks: 'Gracias por imprimir uno.', dlNote: 'Archivos STL para cualquier impresora · cabe en una cama de {bed} mm',
   previewParts: 'Ver las piezas sobre la cama de impresión', printNotes: 'Notas de impresión', dlThis: 'Descargar esta pieza',
   pn1: 'Capas de 0,15 a 0,2 mm; PLA o PETG. La esfera se lee mejor en color claro, los rodillos en oscuro.',
@@ -311,6 +314,7 @@ S.es = {
 };
 
 S.pt = {
+  donate: 'Pague-nos um café', donateSub: 'e ajude a manter este site online', coffeeH: 'Porquê um café?', coffeeP1: 'Cada relógio é calculado do zero num servidor alugado, cerca de um minuto de trabalho cada, e a conta do servidor chega todos os meses, visite uma pessoa ou mil.', coffeeP2: 'O preço de um café mantém o site online para o próximo visitante. Nada fica bloqueado: os ficheiros são seus de qualquer forma.', coffeeGo: 'Pagar um café, 1 € por PayPal', coffeeNo: 'Talvez mais tarde', historyLink: 'Mapa', historyH: 'Relógios feitos até agora', historyCount: '{n} relógios para {p} lugares', historyEmpty: 'Ainda nenhum. O seu pode ser o primeiro.',
   heroEyebrow: 'Acabado de sair da oficina', heroText: '{place} · feito {ago} · lá são {t}', agoNow: 'agora mesmo', agoMin: 'há {n} min', agoH: 'há {n} h', agoD: 'há {n} dias', stBusy: 'A oficina está ocupada: {e}',
   whyEyebrow: 'Porque funciona',
   axisEot: 'sol adiantado  ←  equação do tempo  →  sol atrasado', axisDecl: 'altura do sol', scalePlane: 'plano da escala',
@@ -396,7 +400,7 @@ S.pt = {
   shLine: 'A asa distante sombreia a primeira ou a última hora {x}.',
   details: 'Todos os números', adjust: 'Ajustar o relógio', detailsH: 'O seu relógio em números', settingsH: 'Ajustar o relógio', reset: 'Predefinições', regenerate: 'Gerar de novo', summer: 'Etiqueta de verão',
   fTip: 'Tomba a', fTipV: '{a}° de inclinação', fThread: 'Rosca do rolo', fThreadV: 'passo {p} mm, folga {c} mm',
-  dlZip: 'Descarregar o relógio de sol', dlZipSub: 'ZIP · 4 peças · {mb} MB', donate: '1 € para o autor', donateSub: 'Opcional. Os ficheiros são seus de qualquer forma.',
+  dlZip: 'Descarregar o relógio de sol', dlZipSub: 'ZIP · 4 peças · {mb} MB', 
   thanks: 'Obrigado por imprimir um.', dlNote: 'Ficheiros STL para qualquer impressora · cabe numa mesa de {bed} mm',
   previewParts: 'Ver as peças na mesa de impressão', printNotes: 'Notas de impressão', dlThis: 'Descarregar esta peça',
   pn1: 'Camadas de 0,15 a 0,2 mm; PLA ou PETG. O mostrador lê-se melhor em cor clara, os rolos em escura.',
@@ -412,6 +416,7 @@ S.pt = {
 };
 
 S.fr = {
+  donate: 'Offrez-nous un café', donateSub: 'et aidez à garder ce site en ligne', coffeeH: 'Pourquoi un café ?', coffeeP1: 'Chaque cadran est calculé de zéro sur un serveur loué, environ une minute de travail chacun, et la facture du serveur tombe chaque mois, qu’une personne passe ou mille.', coffeeP2: 'Le prix d’un café le garde en ligne pour le prochain visiteur. Rien n’est verrouillé derrière : les fichiers sont à vous quoi qu’il en soit.', coffeeGo: 'Offrir un café, 1 € via PayPal', coffeeNo: 'Peut-être plus tard', historyLink: 'Carte', historyH: 'Cadrans faits jusqu’ici', historyCount: '{n} cadrans pour {p} lieux', historyEmpty: 'Aucun encore. Le vôtre pourrait être le premier.',
   heroEyebrow: 'Tout juste sorti de l’atelier', heroText: '{place} · fait {ago} · là-bas il est {t}', agoNow: 'à l’instant', agoMin: 'il y a {n} min', agoH: 'il y a {n} h', agoD: 'il y a {n} jours', stBusy: 'L’atelier est occupé : {e}',
   whyEyebrow: 'Pourquoi ça marche',
   axisEot: 'soleil en avance  ←  équation du temps  →  soleil en retard', axisDecl: 'hauteur du soleil', scalePlane: 'plan de l\u2019échelle',
@@ -497,7 +502,7 @@ S.fr = {
   shLine: 'L’aile lointaine ombrage la première ou la dernière heure {x}.',
   details: 'Tous les chiffres', adjust: 'Ajuster le cadran', detailsH: 'Votre cadran en chiffres', settingsH: 'Ajuster le cadran', reset: 'Valeurs par défaut', regenerate: 'Regénérer', summer: 'Sigle d’été',
   fTip: 'Bascule à', fTipV: '{a}° d’inclinaison', fThread: 'Filetage du rouleau', fThreadV: 'pas {p} mm, jeu {c} mm',
-  dlZip: 'Télécharger le cadran solaire', dlZipSub: 'ZIP · 4 pièces · {mb} Mo', donate: '1 € pour l’auteur', donateSub: 'Facultatif. Les fichiers sont à vous quoi qu’il en soit.',
+  dlZip: 'Télécharger le cadran solaire', dlZipSub: 'ZIP · 4 pièces · {mb} Mo', 
   thanks: 'Merci d’en imprimer un.', dlNote: 'Fichiers STL pour toute imprimante · tient sur un plateau de {bed} mm',
   previewParts: 'Voir les pièces sur le plateau', printNotes: 'Conseils d’impression', dlThis: 'Télécharger cette pièce',
   pn1: 'Couches de 0,15 à 0,2 mm ; PLA ou PETG. Le cadran se lit mieux en couleur claire, les rouleaux en foncé.',
@@ -513,6 +518,7 @@ S.fr = {
 };
 
 S.it = {
+  donate: 'Offrici un caffè', donateSub: 'e aiuta a tenere online questo sito', coffeeH: 'Perché un caffè?', coffeeP1: 'Ogni meridiana qui è calcolata da zero su un server in affitto, circa un minuto di lavoro ciascuna, e la bolletta del server arriva ogni mese, che passi una persona o mille.', coffeeP2: 'Il prezzo di un caffè lo tiene online per il prossimo visitatore. Niente è bloccato: i file sono tuoi in ogni caso.', coffeeGo: 'Offri un caffè, 1 € via PayPal', coffeeNo: 'Forse più tardi', historyLink: 'Mappa', historyH: 'Meridiane fatte finora', historyCount: '{n} meridiane per {p} luoghi', historyEmpty: 'Ancora nessuna. La tua potrebbe essere la prima.',
   heroEyebrow: 'Appena uscita dall’officina', heroText: '{place} · fatta {ago} · lì sono le {t}', agoNow: 'proprio ora', agoMin: '{n} min fa', agoH: '{n} h fa', agoD: '{n} giorni fa', stBusy: 'L’officina è occupata: {e}',
   whyEyebrow: 'Perché funziona',
   axisEot: 'sole in anticipo  ←  equazione del tempo  →  sole in ritardo', axisDecl: 'altezza del sole', scalePlane: 'piano della scala',
@@ -598,7 +604,7 @@ S.it = {
   shLine: 'L’ala lontana ombreggia la prima o l’ultima ora {x}.',
   details: 'Tutti i numeri', adjust: 'Regola la meridiana', detailsH: 'La tua meridiana in numeri', settingsH: 'Regola la meridiana', reset: 'Predefiniti', regenerate: 'Rigenera', summer: 'Sigla estiva',
   fTip: 'Si rovescia a', fTipV: '{a}° di inclinazione', fThread: 'Filetto del rullo', fThreadV: 'passo {p} mm, gioco {c} mm',
-  dlZip: 'Scarica la meridiana', dlZipSub: 'ZIP · 4 pezzi · {mb} MB', donate: '1 € per l’autore', donateSub: 'Facoltativo. I file sono tuoi in ogni caso.',
+  dlZip: 'Scarica la meridiana', dlZipSub: 'ZIP · 4 pezzi · {mb} MB', 
   thanks: 'Grazie per averne stampata una.', dlNote: 'File STL per qualsiasi stampante · sta su un piano da {bed} mm',
   previewParts: 'Guarda i pezzi sul piano di stampa', printNotes: 'Note di stampa', dlThis: 'Scarica questo pezzo',
   pn1: 'Strati da 0,15 a 0,2 mm; PLA o PETG. Il quadrante si legge meglio chiaro, i rulli scuri.',
@@ -614,6 +620,7 @@ S.it = {
 };
 
 S.ar = {
+  donate: 'اشترِ لنا قهوة', donateSub: 'وساعد في إبقاء هذا الموقع متاحًا', coffeeH: 'لماذا قهوة؟', coffeeP1: 'كل مزولة هنا تُحسب من الصفر على خادم مستأجر، نحو دقيقة من العمل لكل واحدة، وفاتورة الخادم تأتي كل شهر سواء زار الموقع شخص واحد أو ألف.', coffeeP2: 'ثمن قهوة يبقيه متاحًا للزائر التالي. لا شيء مقفل وراءه: الملفات لك على أي حال.', coffeeGo: 'اشترِ قهوة، 1 € عبر PayPal', coffeeNo: 'ربما لاحقًا', historyLink: 'الخريطة', historyH: 'المزاول المصنوعة حتى الآن', historyCount: '{n} مزولة لـ {p} مكانًا', historyEmpty: 'لا شيء بعد. قد تكون مزولتك الأولى.',
   heroEyebrow: 'طازجة من الورشة', heroText: '{place} · صُنعت {ago} · الساعة هناك {t}', agoNow: 'الآن', agoMin: 'قبل {n} دقيقة', agoH: 'قبل {n} ساعة', agoD: 'قبل {n} يوم', stBusy: 'الورشة مشغولة: {e}',
   whyEyebrow: 'لماذا ينجح هذا',
   axisEot: 'الشمس مبكرة  ←  معادلة الزمن  →  الشمس متأخرة', axisDecl: 'ارتفاع الشمس', scalePlane: 'مستوى التدريج',
@@ -699,7 +706,7 @@ S.ar = {
   shLine: 'يظلل الجناح البعيد الساعة الأولى أو الأخيرة {x}.',
   details: 'كل الأرقام', adjust: 'اضبط المزولة', detailsH: 'مزولتك بالأرقام', settingsH: 'اضبط المزولة', reset: 'الافتراضي', regenerate: 'أعد التوليد', summer: 'رمز التوقيت الصيفي',
   fTip: 'تنقلب عند', fTipV: 'ميل {a}°', fThread: 'سنّ الأسطوانة', fThreadV: 'خطوة {p} مم، خلوص {c} مم',
-  dlZip: 'نزّل المزولة', dlZipSub: 'ZIP · 4 أجزاء · {mb} م.ب', donate: '1 € للصانع', donateSub: 'اختياري. الملفات لك على أي حال.',
+  dlZip: 'نزّل المزولة', dlZipSub: 'ZIP · 4 أجزاء · {mb} م.ب', 
   thanks: 'شكرًا لطباعتك واحدة.', dlNote: 'ملفات STL لأي طابعة · تناسب سطح طباعة {bed} مم',
   previewParts: 'معاينة الأجزاء على سطح الطباعة', printNotes: 'ملاحظات الطباعة', dlThis: 'نزّل هذا الجزء',
   pn1: 'طبقات 0.15 إلى 0.2 مم؛ PLA أو PETG. يُقرأ القرص أفضل بلون فاتح، والأسطوانات بلون داكن.',

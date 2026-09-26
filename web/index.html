@@ -19,7 +19,7 @@
 <body>
 <div class="wrap">
 
-<nav class="topbar"><span class="brand">☉ <span class="brand-name" data-i18n="brand"></span></span><span id="langBox"></span></nav>
+<nav class="topbar"><span class="brand">☉ <span class="brand-name" data-i18n="brand"></span></span><span class="topbar-right"><button class="link quiet" id="historyBtn" type="button" data-i18n="historyLink"></button><span id="langBox"></span></span></nav>
 
 <!-- ============================================================ 1 · where -->
 <section class="beat" id="where">
@@ -119,7 +119,7 @@
 <section class="beat generator-only" id="home" hidden>
   <div class="dl-row">
     <a id="dlZip" class="button main" download><span class="big-label" data-i18n="dlZip"></span><span class="small-label" id="dlZipSub"></span></a>
-    <a id="donate" class="button donate" href="https://paypal.me/pinguinonice/1EUR" target="_blank" rel="noopener"><span class="big-label" data-i18n="donate"></span><span class="small-label" data-i18n="donateSub"></span></a>
+    <button id="donate" class="button donate" type="button"><span class="big-label" data-i18n="donate"></span><span class="small-label" data-i18n="donateSub"></span></button>
   </div>
   <p class="note center" id="dlNote"></p>
   <p class="note center thanks" id="thanks" hidden data-i18n="thanks"></p>
@@ -223,6 +223,24 @@
     <dl class="facts" id="infoList"></dl>
     <div class="figure"><canvas id="analemma3" width="640" height="560"></canvas><div class="cap" id="analemmaCap3"></div></div>
     <div class="figure"><canvas id="profileFig3" width="640" height="420"></canvas><div class="cap" id="profileCap3"></div></div>
+  </div>
+</dialog>
+
+<dialog id="coffee" class="sheet">
+  <div class="sheet-body">
+    <div class="sheet-head"><h3 data-i18n="coffeeH"></h3><form method="dialog"><button class="close" type="submit" aria-label="close">×</button></form></div>
+    <p data-i18n="coffeeP1"></p>
+    <p data-i18n="coffeeP2"></p>
+    <div class="row wrap"><a class="button main-like" href="https://paypal.me/pinguinonice/1EUR" target="_blank" rel="noopener" data-i18n="coffeeGo"></a><form method="dialog"><button class="secondary" type="submit" data-i18n="coffeeNo"></button></form></div>
+  </div>
+</dialog>
+
+<dialog id="history" class="sheet">
+  <div class="sheet-body">
+    <div class="sheet-head"><h3 data-i18n="historyH"></h3><form method="dialog"><button class="close" type="submit" aria-label="close">×</button></form></div>
+    <p class="note" id="historyCount"></p>
+    <div id="historyMap"></div>
+    <ul class="history-list" id="historyList"></ul>
   </div>
 </dialog>
 

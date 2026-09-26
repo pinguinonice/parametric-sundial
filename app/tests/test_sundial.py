@@ -222,6 +222,12 @@ def test_api_generate(tmp_path, monkeypatch):
     assert r.json()["cached"] is True and r.json()["info"]["id"] == info["id"]
     r = client.get("/api/latest")
     assert r.status_code == 200 and r.json()["info"]["id"] == info["id"]
+    before = client.get("/api/history").json()["count"]
+    for _ in range(3):   # same session, same minute: one dot on the map
+        client.post("/api/generate", json=body, headers={"X-Sundial-Session": "abc"})
+    h = client.get("/api/history").json()
+    assert h["count"] == before + 1 and h["items"][-1]["lat"] == 48.8 and h["items"][-1]["place"] == "Stuttgart, Germany"
+    assert len((tmp_path / "creations.jsonl").read_text().splitlines()) >= 3
     for url in list(info["files"].values()) + [info["zip"]]:
         f = client.get(url)
         assert f.status_code == 200 and len(f.content) > 1000
