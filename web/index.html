@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Sundial That Keeps Clock Time</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Source+Sans+3:wght@400;600&family=Amiri:ital,wght@0,400;0,700;1,400&family=Noto+Naskh+Arabic:wght@400;600&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div class="wrap">
+
+<nav class="topbar"><span class="brand">☉</span><span id="langBox"></span></nav>
+
+<section class="hero">
+  <div class="hero-text">
+    <div class="eyebrow" data-i18n="eyebrow"></div>
+    <h1 data-i18n="title"></h1>
+    <p class="lede" data-i18n="lede"></p>
+  </div>
+  <div class="stage">
+    <canvas id="c"></canvas>
+  </div>
+  <div class="caption" id="readout"><span class="big">☉</span><span data-i18n="readoutEmpty"></span></div>
+  <div class="controls">
+    <div><label for="simDate" data-i18n="date"></label><input type="date" id="simDate" value="2026-05-20"></div>
+    <div class="span"><label for="simTime" data-i18n="time"></label>
+      <div style="display:flex;align-items:center;gap:14px"><input id="simTime" type="range" min="0" max="1439" step="1" value="720"><span class="time" id="simTimeVal">12:00</span></div></div>
+    <div><label for="rollerSel" data-i18n="roller"></label><select id="rollerSel"><option value="auto" data-i18n="rollerAuto"></option><option value="roller_1" data-i18n="rollerI"></option><option value="roller_2" data-i18n="rollerII"></option></select></div>
+    <div><label class="check"><input id="explode" type="checkbox"> <span data-i18n="apart"></span></label></div>
+    <div class="chip-row">
+      <button class="chip" type="button" data-date="03-20" data-min="720" data-i18n="chip1"></button>
+      <button class="chip" type="button" data-date="06-21" data-min="1170" data-i18n="chip2"></button>
+      <button class="chip" type="button" data-date="11-03" data-min="600" data-i18n="chip3"></button>
+      <button class="chip" type="button" data-date="12-21" data-min="720" data-i18n="chip4"></button>
+    </div>
+  </div>
+</section>
+
+<section class="chapter" id="why">
+  <div class="two">
+    <div class="prose">
+      <div class="num" data-i18n="ch1n"></div>
+      <h2 data-i18n="ch1h"></h2>
+      <p data-i18n="ch1p1"></p>
+      <p data-i18n="ch1p2"></p>
+    </div>
+    <div class="figure"><canvas id="analemma" width="640" height="560"></canvas><div class="cap" id="analemmaCap"></div></div>
+  </div>
+</section>
+
+<section class="chapter" id="roller">
+  <div class="two rev">
+    <div class="figure"><canvas id="profileFig" width="640" height="560"></canvas><div class="cap" id="profileCap"></div></div>
+    <div class="prose">
+      <div class="num" data-i18n="ch2n"></div>
+      <h2 data-i18n="ch2h"></h2>
+      <p data-i18n="ch2p1"></p>
+      <p data-i18n="ch2p2"></p>
+      <p class="quote" data-i18n="ch2quote"></p>
+    </div>
+  </div>
+</section>
+
+<section class="chapter" id="shape">
+  <div class="prose">
+    <div class="num" data-i18n="ch3n"></div>
+    <h2 data-i18n="ch3h"></h2>
+    <p data-i18n="ch3p1"></p>
+    <p data-i18n="ch3p2"></p>
+  </div>
+</section>
+
+<section class="chapter" id="make">
+  <div class="prose">
+    <div class="num" data-i18n="ch4n"></div>
+    <h2 data-i18n="ch4h"></h2>
+    <p data-i18n="ch4p" class="generator-only"></p>
+    <p data-i18n="demoP" class="demo-only"></p>
+  </div>
+  <div class="maker">
+    <div class="generator-only">
+      <div class="row"><input id="search" type="text" data-i18n-ph="searchPh"><button class="secondary" id="searchBtn" type="button" data-i18n="search"></button><button class="secondary" id="geoBtn" type="button" data-i18n-title="geo">◎</button></div>
+      <div id="map"></div>
+      <div class="grid2">
+        <div class="field"><label for="lat" data-i18n="lat"></label><input id="lat" type="number" step="0.0001" min="-89.9" max="89.9" value="48.7758"></div>
+        <div class="field"><label for="lon" data-i18n="lon"></label><input id="lon" type="number" step="0.0001" min="-180" max="180" value="9.1829"></div>
+        <div class="field"><label for="utc" data-i18n="utc"></label><input id="utc" type="number" step="0.25" min="-14" max="14" value="1"></div>
+        <div class="field"><label for="label" data-i18n="label"></label><input id="label" type="text" value="CET  UTC+1" maxlength="18"></div>
+      </div>
+      <p class="note" id="tzHint"></p>
+      <div class="field"><label for="dia" id="diaLabel"></label><input id="dia" type="range" min="80" max="300" step="5" value="150">
+        <p class="note" data-i18n="diaNote"></p></div>
+      <div class="grid2">
+        <div class="field"><label class="check"><input id="autoHours" type="checkbox" checked> <span data-i18n="autoHours"></span></label></div><div></div>
+        <div class="field"><label for="hFirst" data-i18n="hFirst"></label><input id="hFirst" type="number" min="1" max="11" value="5" disabled></div>
+        <div class="field"><label for="hLast" data-i18n="hLast"></label><input id="hLast" type="number" min="13" max="23" value="20" disabled></div>
+        <div class="field"><label for="year" data-i18n="year"></label><input id="year" type="number" min="1900" max="2200" value="2026"></div>
+        <div class="field"><label for="minr" data-i18n="minr"></label><input id="minr" type="number" min="2" max="15" step="0.5" value="4"></div>
+      </div>
+      <button id="generate" class="primary" type="button" data-i18n="generate"></button>
+      <div class="status" id="status"></div>
+    </div>
+    <div>
+      <h3 class="generator-only" data-i18n="whatH"></h3>
+      <h3 class="demo-only" data-i18n="demoH"></h3>
+      <p class="note generator-only" data-i18n="whatP"></p>
+      <div id="downloads" class="downloads hidden generator-only">
+        <a id="dlZip" class="button main" download data-i18n="dlZip"></a>
+        <a id="dlDial" class="button" download data-i18n="dlDial"></a>
+        <a id="dlR1" class="button" download data-i18n="dlR1"></a>
+        <a id="dlR2" class="button" download data-i18n="dlR2"></a>
+        <a id="dlStand" class="button" download data-i18n="dlStand"></a>
+      </div>
+      <dl class="facts" id="infoList"></dl>
+      <ul id="warnings" class="warn"></ul>
+      <p class="support" id="supportBox"><a href="https://paypal.me/pinguinonice/1EUR" target="_blank" rel="noopener" data-i18n="support"></a><span class="note" data-i18n="supportNote"></span></p>
+    </div>
+  </div>
+</section>
+
+<section class="chapter" id="setup">
+  <div class="prose">
+    <div class="num" data-i18n="ch5n"></div>
+    <h2 data-i18n="ch5h"></h2>
+    <p data-i18n="ch5p"></p>
+  </div>
+  <div class="steps">
+    <div class="step"><h3 data-i18n="s1h"></h3><p data-i18n="s1p"></p></div>
+    <div class="step"><h3 data-i18n="s2h"></h3><p data-i18n="s2p"></p></div>
+    <div class="step"><h3 data-i18n="s3h"></h3><p data-i18n="s3p"></p></div>
+    <div class="step"><h3 data-i18n="s4h"></h3><p data-i18n="s4p"></p></div>
+  </div>
+</section>
+
+<section class="chapter" id="limits">
+  <div class="prose">
+    <div class="num" data-i18n="ch6n"></div>
+    <h2 data-i18n="ch6h"></h2>
+  </div>
+  <div class="limits">
+    <p data-i18n="lim1"></p>
+    <p data-i18n="lim2"></p>
+  </div>
+</section>
+
+<footer data-i18n="footer"></footer>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

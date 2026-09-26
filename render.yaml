@@ -1,0 +1,14 @@
+# Render blueprint: https://render.com/docs/blueprint-spec
+# Fork the repo, then "New > Blueprint" in Render and pick it. The free
+# plan sleeps after 15 min of inactivity; first request afterwards takes
+# about a minute to wake.
+services:
+  - type: web
+    name: parametric-sundial
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/timezone?lat=48.78&lon=9.18
+    envVars:
+      - key: SUNDIAL_CACHE
+        value: /tmp/sundial-web
