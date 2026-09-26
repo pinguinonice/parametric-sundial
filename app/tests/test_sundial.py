@@ -194,6 +194,7 @@ def test_api_generate(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     import sundialweb.api as api
     monkeypatch.setattr(api, "CACHE_DIR", tmp_path)
+    monkeypatch.setenv("SUNDIAL_NO_WARMUP", "1")
     client = TestClient(api.app)
     r = client.get("/api/timezone", params={"lat": 48.7758, "lon": 9.1829})
     assert r.status_code == 200 and r.json()["utc_offset_h"] == 1.0
@@ -219,6 +220,8 @@ def test_api_generate(tmp_path, monkeypatch):
     assert info["bed_mm"] in (180, 220, 250, 300, 350, 400)
     r = client.post("/api/generate", json=body)   # second time: cached, no job
     assert r.json()["cached"] is True and r.json()["info"]["id"] == info["id"]
+    r = client.get("/api/latest")
+    assert r.status_code == 200 and r.json()["info"]["id"] == info["id"]
     for url in list(info["files"].values()) + [info["zip"]]:
         f = client.get(url)
         assert f.status_code == 200 and len(f.content) > 1000

@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -381,6 +381,31 @@ _jobs: dict = {}
 _job_queue: "queue.Queue[str]" = queue.Queue()
 _jobs_lock = threading.Lock()
 _worker_started = False
+MAX_QUEUE = int(os.environ.get("SUNDIAL_MAX_QUEUE", "12"))        # dials waiting at once
+MAX_PER_CLIENT = int(os.environ.get("SUNDIAL_MAX_PER_CLIENT", "2"))  # pending dials per address
+
+
+def _latest_path():
+    return CACHE_DIR / "latest.json"
+
+
+def _note_latest(info):
+    """Remember the dial most recently asked for, so newcomers see a real one."""
+    try:
+        _latest_path().write_text(json.dumps({"id": info["id"], "made_at": time.time()}))
+    except Exception:
+        pass
+
+
+@app.get("/api/latest")
+def api_latest():
+    """The last dial anyone generated (or fetched), with its age in seconds."""
+    try:
+        rec = json.loads(_latest_path().read_text())
+        info = json.loads((CACHE_DIR / rec["id"] / "info.json").read_text())
+    except Exception:
+        raise HTTPException(404, "nothing made yet")
+    return {"age_s": round(time.time() - rec["made_at"]), "info": info}
 
 
 def _timings_path():
@@ -439,6 +464,7 @@ def _worker():
         try:
             info = generate(job["req"], progress)
             _record_timings(marks)
+            _note_latest(info)
             with _jobs_lock:
                 job["status"] = "done"; job["info"] = info; job["done_stages"] = list(STAGES); job["stage"] = None
         except Exception as exc:
@@ -483,23 +509,50 @@ def _prune_jobs():
 
 
 @app.post("/api/generate")
-def api_generate(req: GenerateRequest):
+def api_generate(req: GenerateRequest, request: Request):
     """Start (or find) a build.  Cached results come back at once as
     {"cached": true, "info": ...}; otherwise {"cached": false, "job": id,
     "estimates": {...}} and the job is followed on /api/jobs/{id}."""
     hit = _cached(req)
     if hit:
+        _note_latest(hit)
         return {"cached": True, "info": hit}
+    client = (request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "")) if request else ""
+    return _start_job(req, client)
+
+
+def _start_job(req: GenerateRequest, client: str = ""):
     _prune_jobs()
     _ensure_worker()
     with _jobs_lock:
         for jid, job in _jobs.items():   # same dial already queued or building: join it
             if job["status"] in ("queued", "running") and job["key"] == _cache_key(req):
                 return {"cached": False, "job": jid, "estimates": stage_estimates(), "stages": STAGES}
+        pending = [j for j in _jobs.values() if j["status"] in ("queued", "running")]
+        if client and sum(1 for j in pending if j.get("client") == client) >= MAX_PER_CLIENT:
+            raise HTTPException(429, "you already have dials in the queue; let them finish first")
+        if len(pending) >= MAX_QUEUE:
+            raise HTTPException(429, "the workshop is full right now; try again in a few minutes")
         jid = uuid.uuid4().hex[:12]
-        _jobs[jid] = {"req": req, "key": _cache_key(req), "status": "queued", "created": time.time(), "done_stages": []}
+        _jobs[jid] = {"req": req, "key": _cache_key(req), "status": "queued", "created": time.time(), "done_stages": [], "client": client}
     _job_queue.put(jid)
     return {"cached": False, "job": jid, "estimates": stage_estimates(), "stages": STAGES}
+
+
+@app.on_event("startup")
+def _warm_up():
+    """A fresh server has nothing to show; make one dial so the first
+    visitor sees a real one (skipped under tests and when disabled)."""
+    if os.environ.get("SUNDIAL_NO_WARMUP") or "PYTEST_CURRENT_TEST" in os.environ:
+        return
+    if _latest_path().exists():
+        return
+    req = GenerateRequest(lat=48.7758, lon=9.1829, utc_offset_h=1.0, zone_label="CET  UTC+1", summer_label="CEST",
+                          place_name="Stuttgart, Germany", tz_name="Europe/Berlin")
+    if _cached(req):
+        _note_latest(_cached(req))
+        return
+    threading.Thread(target=lambda: _start_job(req), daemon=True).start()
 
 
 @app.get("/api/jobs/{jid}")

@@ -27,6 +27,10 @@
     <h1 data-i18n="title"></h1>
     <p class="lede" data-i18n="promise"></p>
   </div>
+  <div class="where-grid">
+  <div class="hero" id="heroSlot" hidden>
+    <div class="hero-cap"><span class="eyebrow" data-i18n="heroEyebrow"></span><span id="heroText"></span></div>
+  </div>
   <div class="card place-card">
     <div class="place-top">
       <div class="place-name"><span id="placeName" data-i18n="placeUnknown"></span></div>
@@ -51,6 +55,7 @@
     <p class="quiet-line"><span id="sizeLine"></span> · <button class="link" id="openSettings" type="button" data-i18n="change"></button></p>
     <p class="status" id="status"></p>
     <button id="generate" class="primary" type="button" data-i18n="generate"></button>
+  </div>
   </div>
   <p class="why-link"><a href="#why" data-i18n="whyLink"></a></p>
 </section>
@@ -87,7 +92,7 @@
     <div class="eyebrow" id="todayEyebrow" data-i18n="todayEyebrow"></div>
     <h2 id="todayPlace"></h2>
   </div>
-  <div class="stage">
+  <div class="stage" id="stage">
     <canvas id="c"></canvas>
     <div class="stage-tools"><label class="chip toggle"><input id="explode" type="checkbox"> <span data-i18n="apart"></span></label></div>
   </div>

@@ -6,6 +6,7 @@ export const RTL = new Set(['ar']);
 const S = {};
 
 S.en = {
+  heroEyebrow: 'Fresh from the workshop', heroText: '{place} · made {ago} · there it is {t}', agoNow: 'just now', agoMin: '{n} min ago', agoH: '{n} h ago', agoD: '{n} days ago', stBusy: 'The workshop is busy: {e}',
   whyEyebrow: 'Why this works',
   axisEot: 'sun early  ←  equation of time  →  sun late', axisDecl: 'height of the sun', scalePlane: 'scale plane',
   title: 'The sundial that keeps clock time',
@@ -108,6 +109,7 @@ S.en = {
 };
 
 S.de = {
+  heroEyebrow: 'Frisch aus der Werkstatt', heroText: '{place} · gebaut {ago} · dort ist es {t}', agoNow: 'gerade eben', agoMin: 'vor {n} min', agoH: 'vor {n} h', agoD: 'vor {n} Tagen', stBusy: 'Die Werkstatt ist beschäftigt: {e}',
   whyEyebrow: 'Warum das funktioniert',
   axisEot: 'Sonne zu früh  ←  Zeitgleichung  →  Sonne zu spät', axisDecl: 'Höhe der Sonne', scalePlane: 'Ebene der Skala',
   title: 'Die Sonnenuhr, die nach der Uhr geht',
@@ -208,6 +210,7 @@ S.de = {
 };
 
 S.es = {
+  heroEyebrow: 'Recién salido del taller', heroText: '{place} · hecho {ago} · allí son las {t}', agoNow: 'ahora mismo', agoMin: 'hace {n} min', agoH: 'hace {n} h', agoD: 'hace {n} días', stBusy: 'El taller está ocupado: {e}',
   whyEyebrow: 'Por qué funciona',
   axisEot: 'sol adelantado  ←  ecuación del tiempo  →  sol atrasado', axisDecl: 'altura del sol', scalePlane: 'plano de la escala',
   title: 'El reloj de sol que da la hora del reloj',
@@ -308,6 +311,7 @@ S.es = {
 };
 
 S.pt = {
+  heroEyebrow: 'Acabado de sair da oficina', heroText: '{place} · feito {ago} · lá são {t}', agoNow: 'agora mesmo', agoMin: 'há {n} min', agoH: 'há {n} h', agoD: 'há {n} dias', stBusy: 'A oficina está ocupada: {e}',
   whyEyebrow: 'Porque funciona',
   axisEot: 'sol adiantado  ←  equação do tempo  →  sol atrasado', axisDecl: 'altura do sol', scalePlane: 'plano da escala',
   title: 'O relógio de sol que acerta com o relógio',
@@ -408,6 +412,7 @@ S.pt = {
 };
 
 S.fr = {
+  heroEyebrow: 'Tout juste sorti de l’atelier', heroText: '{place} · fait {ago} · là-bas il est {t}', agoNow: 'à l’instant', agoMin: 'il y a {n} min', agoH: 'il y a {n} h', agoD: 'il y a {n} jours', stBusy: 'L’atelier est occupé : {e}',
   whyEyebrow: 'Pourquoi ça marche',
   axisEot: 'soleil en avance  ←  équation du temps  →  soleil en retard', axisDecl: 'hauteur du soleil', scalePlane: 'plan de l\u2019échelle',
   title: 'Le cadran solaire qui donne l’heure de l’horloge',
@@ -508,6 +513,7 @@ S.fr = {
 };
 
 S.it = {
+  heroEyebrow: 'Appena uscita dall’officina', heroText: '{place} · fatta {ago} · lì sono le {t}', agoNow: 'proprio ora', agoMin: '{n} min fa', agoH: '{n} h fa', agoD: '{n} giorni fa', stBusy: 'L’officina è occupata: {e}',
   whyEyebrow: 'Perché funziona',
   axisEot: 'sole in anticipo  ←  equazione del tempo  →  sole in ritardo', axisDecl: 'altezza del sole', scalePlane: 'piano della scala',
   title: 'La meridiana che segna l’ora dell’orologio',
@@ -608,6 +614,7 @@ S.it = {
 };
 
 S.ar = {
+  heroEyebrow: 'طازجة من الورشة', heroText: '{place} · صُنعت {ago} · الساعة هناك {t}', agoNow: 'الآن', agoMin: 'قبل {n} دقيقة', agoH: 'قبل {n} ساعة', agoD: 'قبل {n} يوم', stBusy: 'الورشة مشغولة: {e}',
   whyEyebrow: 'لماذا ينجح هذا',
   axisEot: 'الشمس مبكرة  ←  معادلة الزمن  →  الشمس متأخرة', axisDecl: 'ارتفاع الشمس', scalePlane: 'مستوى التدريج',
   title: 'المزولة التي تُوافق الساعة',

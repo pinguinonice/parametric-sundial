@@ -49,6 +49,14 @@ button.link:hover{color:var(--brass);text-decoration-color:var(--brass)}
 .figure .cap,.card .cap{font-size:13px;color:var(--muted);margin-top:8px;font-variant-numeric:tabular-nums}
 
 /* 1 · where */
+.where-grid{display:grid;gap:16px}
+@media (min-width:900px){.where-grid{grid-template-columns:minmax(360px,460px) 1fr;align-items:start}.hero{order:2;position:sticky;top:16px}}
+.hero{display:grid;gap:8px}
+.hero .stage canvas{aspect-ratio:16/10}
+@media (min-width:900px){.hero .stage canvas{aspect-ratio:4/3}}
+.hero-cap{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;font-size:14px;color:var(--muted);padding:0 4px}
+.hero-cap .eyebrow{margin:0}
+.hero .stage-tools{display:none}
 .place-card{display:grid;gap:14px;max-width:560px}
 .place-name{font-family:var(--display);font-size:30px;line-height:1.1;font-weight:600}
 .place-sub{font-size:15px;color:var(--ink-2);font-variant-numeric:tabular-nums}

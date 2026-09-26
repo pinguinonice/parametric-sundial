@@ -1,6 +1,6 @@
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { createStage, drawAnalemma, drawProfiles, drawSunPath, sunriseMinutes, zoneNow, wallClock, nextLightMoment, autoHours, renderPartStill, createPartStage } from './viewer-core.js';
+import { createStage, drawAnalemma, drawProfiles, drawSunPath, sunriseMinutes, sunENU, zoneUnix, zoneNow, wallClock, nextLightMoment, autoHours, renderPartStill, createPartStage } from './viewer-core.js';
 import { t, lang, pickLanguage, setLanguage, languageSelector } from './i18n.js';
 
 const $ = (id) => document.getElementById(id);
@@ -8,7 +8,7 @@ const STATIC = document.documentElement.classList.contains('static');   // hoste
 const stage = createStage($('c'));
 window.__sundialStage = stage;   // scripted camera for the visual audit
 const DEFAULTS = { lat: 48.7758, lon: 9.1829, dia: 150, year: new Date().getFullYear(), minr: 4 };
-const state = { info: null, design: null, tz: null, place: null, geoms: null, sweep: null, job: null, when: 'now', moment: null, whyTimer: null, partStage: null };
+const state = { hero: null, heroLoop: null, info: null, design: null, tz: null, place: null, geoms: null, sweep: null, job: null, when: 'now', moment: null, whyTimer: null, partStage: null };
 const STAGE_KEYS = { queued: 'stQueued', design: 'stDesign', dial: 'stDial', roller_1: 'stR1', roller_2: 'stR2', stand: 'stStand', export: 'stExport' };
 
 setLanguage(pickLanguage(), false);
@@ -123,6 +123,53 @@ function compactWhere(on) {
   $('againBtn').textContent = t('anotherPlace');
 }
 
+// the last dial anyone made, as the opening picture; the sun loops through its day
+async function loadHero() {
+  try {
+    const r = await fetch('/api/latest'); if (!r.ok) return;
+    const { age_s, info } = await r.json();
+    if (state.info) return;   // the visitor's own dial arrived first
+    const loader = new STLLoader();
+    const load = (url) => new Promise((res, rej) => loader.load(url, res, undefined, rej));
+    const [gDial, gR1, gR2, gStand] = await Promise.all([load(info.files.dial), load(info.files.roller_1), load(info.files.roller_2), load(info.files.stand)]);
+    if (state.info) return;
+    stage.addPart('dial', gDial, info.assembly.dial_to_world);
+    stage.addPart('roller_1', gR1, info.assembly.rollers_to_world.roller_1);
+    stage.addPart('roller_2', gR2, info.assembly.rollers_to_world.roller_2);
+    stage.addPart('stand', gStand, info.assembly.stand_to_world);
+    stage.setInfo(info); state.hero = { info, age_s, at: performance.now() };
+    $('heroSlot').prepend($('stage')); $('heroSlot').hidden = false;
+    heroCaption(); heroLoop();
+  } catch (e) { /* no hero: the card stands alone */ }
+}
+function heroCaption() {
+  const h = state.hero; if (!h) return;
+  const age = h.age_s + (performance.now() - h.at) / 1000;
+  const ago = age < 90 ? t('agoNow') : age < 3600 ? t('agoMin', { n: Math.round(age / 60) }) : age < 86400 ? t('agoH', { n: Math.round(age / 3600) }) : t('agoD', { n: Math.round(age / 86400) });
+  const p = h.info.params, now = zoneNow(p);
+  $('heroText').textContent = t('heroText', { place: p.place_name || `${fmtDeg(p.lat, 'N', 'S')}, ${fmtDeg(p.lon, 'E', 'W')}`, ago, t: wallClock(p.tz_name) || fmtMins(now.mins) });
+}
+function heroLoop() {
+  cancelAnimationFrame(state.heroLoop);
+  const p = state.hero.info.params, now = zoneNow(p);
+  const y = p.year, mo = now.mo, d = now.d;
+  const start = sunriseMinutes(y, mo, d, p);
+  let end = start; for (let m = 1439; m > start; m -= 2) { if (sunENU(zoneUnix(y, mo, d, m / 60, p.utc_offset_h), p.lat, p.lon)[2] > 0) { end = m; break; } }
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const dur = 24000, t0 = performance.now();
+  const tick = (ts) => {
+    if (!state.hero) return;
+    const k = reduce ? 0.5 : ((ts - t0) % dur) / dur;
+    stage.setTime(y, mo, d, Math.round(start + (end - start) * k), 'auto', false);
+    state.heroLoop = requestAnimationFrame(tick);
+  };
+  state.heroLoop = requestAnimationFrame(tick);
+}
+function endHero() {
+  cancelAnimationFrame(state.heroLoop); state.hero = null;
+  $('today').insertBefore($('stage'), $('readout')); $('heroSlot').hidden = true;
+}
+
 // ============================================================ 2 · making
 function requestBody() {
   return {
@@ -200,6 +247,7 @@ async function generate(bodyOverride) {
   startMaking(body);
   try {
     const r = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (r.status === 429) throw new Error(t('stBusy', { e: (await r.json()).detail }));
     if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
     const start = await r.json();
     if (start.cached) {
@@ -269,6 +317,7 @@ async function onResult(info) {
   const load = (url) => new Promise((res, rej) => loader.load(url, res, undefined, rej));
   const [gDial, gR1, gR2, gStand] = await Promise.all([load(info.files.dial), load(info.files.roller_1), load(info.files.roller_2), load(info.files.stand)]);
   state.geoms = { dial: gDial, roller_1: gR1, roller_2: gR2, stand: gStand };
+  if (state.hero) endHero();
   stage.addPart('dial', gDial, info.assembly.dial_to_world);
   stage.addPart('roller_1', gR1, info.assembly.rollers_to_world.roller_1);
   stage.addPart('roller_2', gR2, info.assembly.rollers_to_world.roller_2);
@@ -475,6 +524,7 @@ async function loadStatic() {
 function onLanguage() {
   hints(); redrawFigures(); fillInfo(); accuracyLine(); update();
   if (state.place) { $('placeName').textContent = state.place.name || t('placeGeo'); }
+  heroCaption();
   if (state.info) { $('todayEyebrow').textContent = t(state.when === 'now' ? 'todayEyebrow' : 'tomorrowEyebrow'); if (!STATIC) downloads(state.info); }
   compactWhere(!!state.info);
   if (!STATIC && !$('making').hidden) rotateWhy();
@@ -496,6 +546,7 @@ if (STATIC) {
   $('mapToggle').addEventListener('click', () => { const b = $('mapBox'); b.hidden = !b.hidden; if (!b.hidden) { initMap(); setTimeout(() => map.invalidateSize(), 50); } });
   $('generate').addEventListener('click', () => generate());
   $('againBtn').addEventListener('click', () => { compactWhere(false); $('where').scrollIntoView({ behavior: 'smooth' }); });
+  loadHero();
   // where to start: a shared link, a job left running, the last place, or Stuttgart
   const at = (location.hash.match(/#at=([^&]+)/) || [])[1];
   const pending = session.get('sundial-job');

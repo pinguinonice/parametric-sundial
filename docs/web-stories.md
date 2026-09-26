@@ -1,5 +1,10 @@
 # Website stories
 
+Status: the four-beat flow is built on the branch (S1.1 to S1.4, S2.1 to
+S2.3, S3.1 to S3.3, S4.1 to S4.4, S5.1 to S5.3, B1, B2). Open: S3.4 touch
+polish, README text from the same source as the print notes (S4.4, second
+bullet), the settings sheet on desktop as a side panel.
+
 Plan for turning the page into a mobile-first flow with four beats:
 **Where am I**, **Making it**, **Your dial today**, **Take it home**. Written as
 user stories with acceptance criteria so each can be built, checked and shipped
@@ -318,6 +323,28 @@ that the page keeps its character.
   layout starting at beat 3, so the hosted preview and the live site match.
 
 ---
+
+## Backlog after the first prototype
+
+Ideas from Philipp, to be worked in gradually with a commit per step:
+
+* **B1 · Latest dial as the opening picture.** *Done in the prototype:*
+  `/api/latest` returns the last dial anyone made; the opening shows it in
+  3D with the sun looping through its day and "made 4 min ago". A fresh
+  server makes a Stuttgart dial at startup so there is always one.
+* **B2 · Rate limit and queue cap.** *Done in the prototype:* at most 12
+  dials waiting, at most 2 pending per address (`SUNDIAL_MAX_QUEUE`,
+  `SUNDIAL_MAX_PER_CLIENT`), a 429 with a plain sentence otherwise.
+* **B3 · User first.** Every screen must feel like an exciting intro, not a
+  form. Keep asking on each screenshot: what is the one thing here, and is
+  anything on the screen not helping it?
+* **B4 · Graphical, from the real model.** No pre-rendered pictures or
+  videos anywhere. Everything that moves is drawn live from the visitor's
+  own dial, or from the latest one made: the sun sweep, the analemma, the
+  roller profiles, the parts on the bed.
+* **B5 · Judge the screenshots.** After every change, look at phone and
+  desktop screenshots of each beat and fix what looks wrong before moving
+  to the next story. Mobile first, desktop kept in mind.
 
 ## Order of work
 
