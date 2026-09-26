@@ -20,6 +20,7 @@ from typing import Optional
 
 import numpy as np
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -32,9 +33,27 @@ WEB_DIR = Path(__file__).resolve().parent.parent.parent / "web"
 CACHE_DIR = Path(os.environ.get("SUNDIAL_CACHE", os.path.join(tempfile.gettempdir(), "sundial-web")))
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-CACHE_VERSION = "12"  # bump when the geometry changes so cached results are rebuilt
+CACHE_VERSION = "13"  # bump when the geometry changes so cached results are rebuilt
 
 app = FastAPI(title="Bernhardt sundial generator", version="1.0")
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+VIEWER_FACES = {"dial": 60000, "roller_1": 24000, "roller_2": 24000, "stand": 24000}
+
+
+def viewer_glb(meshes: dict) -> bytes:
+    """One small GLB with all four parts for the browser: the print meshes
+    decimated to a few tens of thousands of faces each (2 MB instead of
+    28 MB of STL), vertex data untouched in orientation."""
+    import trimesh
+    slim = {}
+    for name, m in meshes.items():
+        target = VIEWER_FACES.get(name, 30000)
+        try:
+            slim[name] = m.simplify_quadric_decimation(face_count=target) if len(m.faces) > target else m
+        except Exception:   # decimation library missing: ship the full mesh
+            slim[name] = m
+    return trimesh.Scene(slim).export(file_type="glb")
 
 
 class GenerateRequest(BaseModel):
@@ -251,6 +270,8 @@ def generate(req: GenerateRequest, progress=None):
         files[k] = f"/api/files/{key}/{fn}"
 
     meshes = {"dial": parts["dial"], "stand": parts["stand"], **{name: mesh for name, mesh, inf in parts["rollers"]}}
+    (out / "viewer.glb").write_bytes(viewer_glb(meshes))
+    files["glb"] = f"/api/files/{key}/viewer.glb"
     bounds = {k: m.bounds.tolist() for k, m in meshes.items()}
     # print facts per part: the meshes are already in print orientation
     # (dial scale side up, rollers pin down, stand plate down)
@@ -648,9 +669,12 @@ def api_file(key: str, name: str, download_name: str = ""):
     path = CACHE_DIR / key / name
     if not path.exists():
         raise HTTPException(404)
-    media = "application/zip" if name.endswith(".zip") else "model/stl"
+    media = "application/zip" if name.endswith(".zip") else "model/gltf-binary" if name.endswith(".glb") else "model/stl"
     fname = _slug(download_name.rsplit(".", 1)[0]) + "." + name.rsplit(".", 1)[1] if download_name else name
-    return FileResponse(path, media_type=media, filename=fname)
+    headers = {"Cache-Control": "public, max-age=31536000, immutable"}   # the key names the content
+    if name.endswith(".glb"):
+        return FileResponse(path, media_type=media, headers=headers)
+    return FileResponse(path, media_type=media, filename=fname, headers=headers)
 
 
 if WEB_DIR.exists():

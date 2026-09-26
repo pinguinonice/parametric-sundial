@@ -22,6 +22,36 @@ const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } cat
 const SESSION_ID = (() => { let id = store.get('sundial-session'); if (!id) { id = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join(''); store.set('sundial-session', id); } return id; })();
 const session = { get(k) { try { return JSON.parse(sessionStorage.getItem(k)); } catch (e) { return null; } }, set(k, v) { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* blocked */ } } };
 
+// Leaflet only when a map is opened
+let leafletReady = null;
+function ensureLeaflet() {
+  if (window.L) return Promise.resolve();
+  if (!leafletReady) leafletReady = new Promise((res, rej) => {
+    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; css.crossOrigin = ''; document.head.appendChild(css);
+    const js = document.createElement('script'); js.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'; js.crossOrigin = ''; js.onload = res; js.onerror = rej; document.head.appendChild(js);
+  });
+  return leafletReady;
+}
+// the four part geometries: one small GLB when the server made one, else the STLs
+async function loadGeometries(info) {
+  if (info.files.glb) {
+    const gltf = await new Promise((res, rej) => new GLTFLoader().load(info.files.glb, res, undefined, rej));
+    const out = {};
+    gltf.scene.traverse((o) => { if (o.isMesh) { const n = (o.name || o.parent?.name || '').replace(/\.\d+$/, ''); for (const k of ['dial', 'roller_1', 'roller_2', 'stand']) if (n === k || n.startsWith(k)) out[k] = o.geometry; } });
+    if (['dial', 'roller_1', 'roller_2', 'stand'].every((k) => out[k])) return out;
+  }
+  const loader = new STLLoader();
+  const load = (url) => new Promise((res, rej) => loader.load(url, res, undefined, rej));
+  const [dial, roller_1, roller_2, stand] = await Promise.all([load(info.files.dial), load(info.files.roller_1), load(info.files.roller_2), load(info.files.stand)]);
+  return { dial, roller_1, roller_2, stand };
+}
+function placeParts(info, g) {
+  stage.addPart('dial', g.dial, info.assembly.dial_to_world);
+  stage.addPart('roller_1', g.roller_1, info.assembly.rollers_to_world.roller_1);
+  stage.addPart('roller_2', g.roller_2, info.assembly.rollers_to_world.roller_2);
+  stage.addPart('stand', g.stand, info.assembly.stand_to_world);
+  $('stage').classList.remove('loading');
+}
 function currentParams() {
   if (STATIC && state.info) return state.info.params;
   return { lat: +$('lat').value, lon: +$('lon').value, utc_offset_h: +$('utc').value, year: +$('year').value };
@@ -30,8 +60,10 @@ function showBeat(id, on) { $(id).hidden = !on; }
 
 // ============================================================ 1 · where
 let map, marker;
-function initMap() {
+async function initMap() {
   if (map || STATIC) return;
+  await ensureLeaflet();
+  if (map) return;
   const p = currentParams();
   map = L.map('map', { zoomControl: false }).setView([p.lat, p.lon], 6);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '&copy; OpenStreetMap' }).addTo(map);
@@ -141,16 +173,11 @@ async function loadHero() {
     const r = await fetch('/api/latest'); if (!r.ok) return;
     const { age_s, info } = await r.json();
     if (state.info) return;   // the visitor's own dial arrived first
-    const loader = new STLLoader();
-    const load = (url) => new Promise((res, rej) => loader.load(url, res, undefined, rej));
-    const [gDial, gR1, gR2, gStand] = await Promise.all([load(info.files.dial), load(info.files.roller_1), load(info.files.roller_2), load(info.files.stand)]);
-    if (state.info) return;
-    stage.addPart('dial', gDial, info.assembly.dial_to_world);
-    stage.addPart('roller_1', gR1, info.assembly.rollers_to_world.roller_1);
-    stage.addPart('roller_2', gR2, info.assembly.rollers_to_world.roller_2);
-    stage.addPart('stand', gStand, info.assembly.stand_to_world);
-    stage.setInfo(info); state.hero = { info, age_s, at: performance.now() };
     $('heroSlot').prepend($('stage')); $('heroSlot').hidden = false;
+    const g = await loadGeometries(info);
+    if (state.info) return;
+    placeParts(info, g);
+    stage.setInfo(info); state.hero = { info, age_s, at: performance.now() };
     heroCaption(); heroLoop();
   } catch (e) { /* no hero: the card stands alone */ }
 }
@@ -325,15 +352,10 @@ function fail(msg, body) {
 
 // ============================================================ 3 · today
 async function onResult(info) {
-  const loader = new STLLoader();
-  const load = (url) => new Promise((res, rej) => loader.load(url, res, undefined, rej));
-  const [gDial, gR1, gR2, gStand] = await Promise.all([load(info.files.dial), load(info.files.roller_1), load(info.files.roller_2), load(info.files.stand)]);
-  state.geoms = { dial: gDial, roller_1: gR1, roller_2: gR2, stand: gStand };
+  const g = await loadGeometries(info);
+  state.geoms = g;
   if (state.hero) endHero();
-  stage.addPart('dial', gDial, info.assembly.dial_to_world);
-  stage.addPart('roller_1', gR1, info.assembly.rollers_to_world.roller_1);
-  stage.addPart('roller_2', gR2, info.assembly.rollers_to_world.roller_2);
-  stage.addPart('stand', gStand, info.assembly.stand_to_world);
+  placeParts(info, g);
   clearInterval(state.whyTimer);
   afterLoad(info);
   showBeat('making', false); showBeat('today', true); showBeat('home', true);
@@ -495,7 +517,7 @@ let historyMap = null;
 async function openHistory() {
   $('history').showModal();
   try {
-    const h = await (await fetch('/api/history')).json();
+    const [h] = await Promise.all([(await fetch('/api/history')).json(), ensureLeaflet()]);
     $('historyCount').textContent = h.count ? t('historyCount', { n: h.count, p: h.places }) : t('historyEmpty');
     if (!historyMap) {
       historyMap = L.map('historyMap', { zoomControl: false, worldCopyJump: true }).setView([20, 0], 1);
@@ -556,6 +578,7 @@ async function loadStatic() {
   }, rej));
   const a = info.assembly;
   await Promise.all([one('dial', a.dial_to_world), one('stand', a.stand_to_world), one('roller_1', a.rollers_to_world.roller_1), one('roller_2', a.rollers_to_world.roller_2)]);
+  $('stage').classList.remove('loading');
   showBeat('today', true);
   afterLoad(info);
 }
@@ -583,7 +606,7 @@ if (STATIC) {
   $('searchBtn').addEventListener('click', search);
   $('search').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); search(); } if (e.key === 'Escape') closeResults(); });
   document.addEventListener('click', (e) => { if (!e.target.closest('.search-wrap')) closeResults(); });
-  $('mapToggle').addEventListener('click', () => { const b = $('mapBox'); b.hidden = !b.hidden; if (!b.hidden) { initMap(); setTimeout(() => map.invalidateSize(), 50); } });
+  $('mapToggle').addEventListener('click', async () => { const b = $('mapBox'); b.hidden = !b.hidden; if (!b.hidden) { await initMap(); setTimeout(() => map.invalidateSize(), 50); } });
   $('generate').addEventListener('click', () => generate());
   $('againBtn').addEventListener('click', () => { compactWhere(false); $('where').scrollIntoView({ behavior: 'smooth' }); });
   loadHero();

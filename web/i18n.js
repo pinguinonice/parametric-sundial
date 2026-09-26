@@ -736,6 +736,11 @@ export function setLanguage(code, remember = true) {
   current = S[code] ? code : 'en';
   if (remember) { try { localStorage.setItem('sundial-lang', current); } catch (e) { /* ignore */ } }
   document.documentElement.lang = current;
+  if (current === 'ar' && !document.getElementById('arFonts')) {
+    const l = document.createElement('link'); l.id = 'arFonts'; l.rel = 'stylesheet';
+    l.href = 'https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Noto+Naskh+Arabic:wght@400;600&display=swap';
+    document.head.appendChild(l);
+  }
   document.documentElement.dir = RTL.has(current) ? 'rtl' : 'ltr';
   document.documentElement.classList.toggle('rtl', RTL.has(current));
   applyStatic();

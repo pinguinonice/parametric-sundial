@@ -133,6 +133,11 @@ button.secondary:hover,.button:hover{border-color:var(--brass);color:var(--ink)}
 .stage canvas{display:block;width:100%;height:auto;aspect-ratio:4/5;max-width:100%;touch-action:none}
 @media (min-width:700px){.stage canvas{aspect-ratio:16/9}}
 .stage-tools{position:absolute;top:10px;inset-inline-end:10px}
+.stage-wait{position:absolute;inset:0;display:none;align-items:center;justify-content:center;pointer-events:none}
+.stage.loading .stage-wait{display:flex}
+.stage-wait span{width:14px;height:14px;border-radius:50%;background:var(--brass);opacity:.5;animation:breathe 2.4s ease-in-out infinite;box-shadow:0 0 40px 18px rgba(255,211,106,.35)}
+@keyframes breathe{0%,100%{transform:scale(.8);opacity:.35}50%{transform:scale(1.15);opacity:.7}}
+@media (prefers-reduced-motion: reduce){.stage-wait span{animation:none}}
 .caption{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:baseline;padding:12px 4px 0;font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums}
 .caption .big{font-family:var(--display);font-size:32px;line-height:1;color:var(--ink);font-weight:600}
 .caption .dot i{display:inline-block;width:9px;height:9px;border-radius:50%;background:#E0281A;margin-inline-end:6px;vertical-align:middle}

@@ -12,3 +12,4 @@ timezonefinder>=6.5
 python-multipart>=0.0.9
 networkx>=3
 triangle>=20200424
+fast_simplification>=0.1.9

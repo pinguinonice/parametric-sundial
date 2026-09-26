@@ -5,8 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#F1ECE2">
 <title>The Sundial That Keeps Clock Time</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Source+Sans+3:wght@400;600&family=Amiri:ital,wght@0,400;0,700;1,400&family=Noto+Naskh+Arabic:wght@400;600&display=swap">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net"><link rel="preconnect" href="https://tile.openstreetmap.org"><link rel="preconnect" href="https://nominatim.openstreetmap.org">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Source+Sans+3:wght@400;600&display=swap">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/environments/RoomEnvironment.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/utils/BufferGeometryUtils.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js">
+<link rel="modulepreload" href="viewer-core.js"><link rel="modulepreload" href="i18n.js">
+<link rel="preload" href="/api/latest" as="fetch" crossorigin>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%2713%27 fill=%27none%27 stroke=%27%23B4842A%27 stroke-width=%273%27/%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%274%27 fill=%27%23B4842A%27/%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
 <script type="importmap">
@@ -92,8 +100,9 @@
     <div class="eyebrow" id="todayEyebrow" data-i18n="todayEyebrow"></div>
     <h2 id="todayPlace"></h2>
   </div>
-  <div class="stage" id="stage">
+  <div class="stage loading" id="stage">
     <canvas id="c"></canvas>
+    <div class="stage-wait" aria-hidden="true"><span></span></div>
     <div class="stage-tools"><label class="chip toggle"><input id="explode" type="checkbox"> <span data-i18n="apart"></span></label></div>
   </div>
   <div class="caption" id="readout"><span class="big">☉</span><span data-i18n="readoutEmpty"></span></div>
@@ -253,7 +262,6 @@
   </div>
 </dialog>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script type="module" src="app.js"></script>
 </body>
 </html>

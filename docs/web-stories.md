@@ -363,6 +363,13 @@ Ideas from Philipp, to be worked in gradually with a commit per step:
   here and folded into the plan, the current increment is finished and
   committed first, then the next one is picked from this list.
 
+* **B11 · Fast, with calm placeholders.** *Done:* the viewer loads one
+  decimated GLB (about 1 MB gzipped) instead of 28 MB of STL; files carry
+  immutable cache headers and gzip; three.js modules are preloaded and the
+  CDNs preconnected; Leaflet and the Arabic fonts load only when a map or
+  Arabic is opened; the stage shows a soft breathing sun dot until the
+  meshes arrive. Nothing else spins or flashes.
+
 ## Order of work
 
 Three slices. Each leaves the site working and shippable.
