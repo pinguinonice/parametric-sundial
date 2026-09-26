@@ -169,7 +169,7 @@ function fillInfo() {
     [t('fHours'), t('fHoursV', { a: d.hour_first, b: d.hour_last, t: d.minute_ticks ? t('tick1') : t('tick5') })],
     [t('fDay'), t('fDayV', { a: fmt(d.sunrise_earliest), b: fmt(d.sunset_latest) })],
     [t('fRoller'), t('fRollerV', { a: d.roller_r_min.toFixed(1), b: d.roller_r_max.toFixed(1) })],
-    [t('fStand'), t('fStandV', { t: d.tilt_deg.toFixed(1), d: (2 * (d.base_radius || 58)).toFixed(0) })],
+    [t('fStand'), t('fStandV', { t: d.tilt_deg.toFixed(1), w: d.plate_bounds ? (d.plate_bounds[2] - d.plate_bounds[0]).toFixed(0) : '?', l: d.plate_bounds ? (d.plate_bounds[3] - d.plate_bounds[1]).toFixed(0) : '?' })],
   ];
   if (info.bounds) rows.push([t('fFoot'), `${(info.bounds.dial[1][0] - info.bounds.dial[0][0]).toFixed(0)} × ${(info.bounds.dial[1][1] - info.bounds.dial[0][1]).toFixed(0)} × ${(info.bounds.dial[1][2] - info.bounds.dial[0][2]).toFixed(0)} mm`]);
   else rows.push([t('fDish'), t('fDishV', { d: d.dish_depth.toFixed(0) })]);

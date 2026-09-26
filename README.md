@@ -76,9 +76,13 @@ the cache is wiped on restart, which is fine.
   with an identification groove (I = one, II = two) and a threaded pin that screws into the hub
   (one rounded helical ridge, 2.5 mm pitch, 0.3 mm radial clearance, so it prints and fits without
   calibration; the collar seats on the hub and sets the height). The stand has a keyed pin so the
-  dial can only sit in the right orientation, and its pebble base is sized from the centre of mass
-  of the assembled dial: it grows towards the overhang until the whole thing can be tilted 22° in
-  any direction before it tips. The API reports the achieved tip angle under `stability`.
+  dial can only sit in the right orientation. Its base is the place's own noon analemma (the
+  sun's hour angle at twelve o'clock against its distance from the zenith), fattened into a flat
+  plate with the months engraved along the curve; the stem stands inside the loop on the reader's
+  side (the small loop of the eight north of the tropics) and the other loop lies under the dial.
+  The analemma is scaled so the foot fits its loop and, if needed, until the assembled dial can be
+  tilted 22° in any direction before it tips. The API reports the achieved tip angle under
+  `stability`.
 * `api.py`: FastAPI, serves the frontend in `web/` and `/api/generate`, `/api/timezone`, `/api/sun`.
 
 Tests (`app/tests`) cast real rays against the generated roller and dial meshes to verify that the
@@ -88,9 +92,9 @@ shadow edge lands on the right minute and that the dial body does not shadow its
 
 * `dial.stl` scale side up, tree supports under the wings and hub; 0.15–0.2 mm layers.
 * `roller_1.stl`, `roller_2.stl` pin down with a brim.
-* `stand.stl` base down; below 45° latitude add supports under the stem.
+* `stand.stl` plate down; the stem's bend needs no supports above about 25° latitude, tree supports under it otherwise.
 
-Level the base, point the stem to true north (south on the southern hemisphere), drop the dial on
+Level the plate, point its long axis to true north (south on the southern hemisphere), drop the dial on
 the keyed pin, screw in the roller for the current half year until its collar seats, and read at
 the leading shadow edge.
 

@@ -208,30 +208,29 @@ def test_api_generate(tmp_path, monkeypatch):
     assert r.status_code == 200 and len(r.json()["hours"]) == 288
 
 
-@pytest.mark.parametrize("lat,lon", [(10.0, 0.0), (30.0, 31.2), (-34.6, -58.4), (64.1, -21.9)])
+@pytest.mark.parametrize("lat,lon", [(-22.9, -43.2), (1.35, 103.8), (30.0, 31.2), (-34.6, -58.4), (64.1, -21.9)])
 def test_stand_does_not_tip(lat, lon):
-    """The pebble base must carry the assembled dial with a safety margin:
-    the whole assembly can be tilted TIP_ANGLE_REQ_DEG in any direction
-    before its centre of mass leaves the footprint."""
-    from sundialweb.meshing import TIP_ANGLE_REQ_DEG, load_masses, _dial_to_stand
+    """The analemma plate must carry the assembled dial with a safety
+    margin: the whole assembly can be tilted TIP_ANGLE_REQ_DEG in any
+    direction before its centre of mass leaves the footprint.  Checked
+    against the real meshes: the footprint is the stand's own bottom face."""
+    from sundialweb.meshing import TIP_ANGLE_REQ_DEG, load_masses
+    from shapely.geometry import Point, MultiPoint
     d = build_design(DesignParams(lat=lat, lon=lon, utc_offset_h=0.0))
     parts = build_all(d)
     stab = parts["stand_info"]["stability"]
     assert stab["tip_angle_deg"] >= TIP_ANGLE_REQ_DEG - 0.5, stab
-    assert stab["margin_mm"] >= 8.0, stab
-    # independent check of the centre of mass from the real meshes
     g = parts["geometry"]
     loads = load_masses(d, g, parts["dial"], parts["rollers"], parts["dial_info"])
     stand = parts["stand"]
     V = sum(v for v, _ in loads) + stand.volume
     com = (sum(v * np.asarray(c) for v, c in loads) + stand.volume * np.asarray(stand.center_mass)) / V
-    a_x, a_yp, a_ym = parts["stand_info"]["base_semi_axes"]
-    y_f = parts["stand_info"]["base_centre_y"]
-    dy = com[1] - y_f
-    a_y = a_yp if dy > 0 else a_ym
-    side = a_x * math.sqrt(max(1.0 - (dy / a_y) ** 2, 0.0)) - abs(com[0])
-    margin = min(a_yp - dy, a_ym + dy, side)
-    assert math.degrees(math.atan2(margin, com[2])) >= TIP_ANGLE_REQ_DEG - 1.0, (com, parts["stand_info"]["base_semi_axes"])
+    bottom = stand.vertices[np.abs(stand.vertices[:, 2]) < 1e-6][:, :2]
+    hull = MultiPoint(bottom).convex_hull
+    c = Point(com[0], com[1])
+    assert hull.contains(c)
+    margin = hull.exterior.distance(c)
+    assert math.degrees(math.atan2(margin, com[2])) >= TIP_ANGLE_REQ_DEG - 1.0, (com, margin)
     assert stand.bounds[0][2] == pytest.approx(0.0, abs=1e-6)
 
 

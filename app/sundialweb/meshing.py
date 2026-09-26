@@ -146,6 +146,32 @@ def arc_text_cutters(surf, d, text: str, height: float, rho: float, psi_deg: flo
     return cutters
 
 
+def flat_arc_glyphs(text: str, height: float, centre, radius: float, theta_c: float = 0.0):
+    """Shapely polygons of `text` laid along a circle of `radius` about
+    `centre`, on its lower side (angles measured from -y towards +x), the
+    string centred on theta_c, glyph tops towards the centre.  Reads left
+    to right for a viewer standing on the -y side."""
+    from shapely.affinity import rotate as _rot, translate as _tr
+    scale = height / _cap_height()
+    bar_l = _path_bounds(TextPath((0, 0), "|", size=1.0, prop=_FONT))[0]
+
+    def pen(prefix):
+        return _path_bounds(TextPath((0, 0), prefix + "|", size=1.0, prop=_FONT))[2] - (bar_l + _bar_w())
+
+    total = pen(text) * scale
+    out = []
+    for i, ch in enumerate(text):
+        if ch.strip() == "":
+            continue
+        gb = _path_bounds(TextPath((0, 0), ch, size=1.0, prop=_FONT))
+        x_c = (pen(text[:i]) + 0.5 * (gb[0] + gb[2])) * scale - total / 2.0
+        th = theta_c + x_c / radius
+        px, py = centre[0] + radius * math.sin(th), centre[1] - radius * math.cos(th)
+        for poly in _text_polygons(ch, None, scale=scale):
+            out.append(_tr(_rot(poly, math.degrees(th), origin=(0, 0)), px, py))
+    return out, total
+
+
 def _path_bounds(tp):
     v = tp.vertices
     if len(v) == 0:
@@ -971,22 +997,30 @@ def _dial_to_stand(d: Design):
 
 
 def _stand_layout(d: Design, g: BodyGeometry):
+    """Where the dial sits over the foot of the stem (stand frame: foot at
+    the origin, +y towards the elevated pole).  The stem rises vertically
+    by h_v, then bends into the polar axis and runs L_a along it to the pin
+    base; hub and dish continue along the axis to the dial centre.  The
+    run along the axis is capped, so at low latitudes the dial is lifted
+    instead of pushed out on a long cantilever."""
     phi = math.radians(abs(d.params.lat))
     phi = max(phi, math.radians(8.0))
     a = np.array([0.0, math.cos(phi), math.sin(phi)])
     D0 = dish_depth(g, d)
     R_out = g.R_out
-    clearance = 8.0
-    L_needed = (R_out * math.cos(phi) + clearance + 10.0) / math.sin(phi) - g.hub_len - D0
-    L_stem = float(min(max(L_needed, 0.55 * R_out), 170.0))
-    centre = (L_stem + g.hub_len + D0) * a
-    return phi, a, L_stem, centre
+    z_rim = R_out * math.cos(phi) + 18.0          # dial centre height for 18 mm of rim clearance
+    L_hub = g.hub_len + D0
+    L_a = float(min(max((z_rim - 30.0 * math.sin(phi)) / math.sin(phi) - L_hub, 0.55 * R_out), 0.6 * R_out))
+    h_v = max(0.0, z_rim - (L_a + L_hub) * math.sin(phi))
+    top = np.array([0.0, 0.0, h_v]) + L_a * a      # pin base
+    centre = top + L_hub * a
+    return phi, a, top, centre, h_v
 
 
 def load_masses(d: Design, g: BodyGeometry, dial, rollers, dial_info):
     """Volumes and centres of mass (stand frame) of what the stand carries:
     the dial and the heavier of the two rollers, screwed in."""
-    phi, a, L_stem, centre = _stand_layout(d, g)
+    phi, a, top, centre, h_v = _stand_layout(d, g)
     Rd = _dial_to_stand(d)
     loads = []
     c = dial.center_mass
@@ -1002,199 +1036,327 @@ def load_masses(d: Design, g: BodyGeometry, dial, rollers, dial_info):
     return loads
 
 
-def build_stand(d: Design, g: BodyGeometry, loads=None):
-    """Stand in its own frame: base on z=0, +y towards the elevated pole.
-    An egg-shaped pebble base and a stem that rises vertically and bends
-    into the polar axis, tapering like the roller; a keyed pin on top.
+def noon_analemma(d: Design, n_days=366):
+    """The place's noon analemma in the sun's own angles: x = the sun's
+    hour angle at 12:00 zone time (the equation of time plus the longitude
+    offset within the zone), y = its distance from the zenith towards the
+    elevated pole, both in degrees, in the stand frame (+y towards the
+    pole, +x to the reader's right).  Returns (points[n, 2], month-start
+    indices)."""
+    from . import solar as _solar
+    from datetime import date
+    p = d.params
+    sgn = 1.0 if p.lat >= 0 else -1.0
+    t0 = _solar.zone_time_to_unix(p.year, 1, 1, 12.0, p.utc_offset_h)
+    t = t0 + np.arange(n_days, dtype=float) * 86400.0
+    decl, _ = _solar.sun_geometry(t)
+    H = _solar.hour_angle(t, p.lon)
+    H = (H + 180.0) % 360.0 - 180.0
+    pts = np.stack([sgn * H, sgn * (p.lat - decl)], -1)
+    month_idx = [(date(p.year, m, 1) - date(p.year, 1, 1)).days for m in range(1, 13)]
+    return pts, month_idx
 
-    The pebble is sized from the centre of mass of everything it carries:
-    it grows towards the overhanging dial until the whole assembly could be
-    tilted by TIP_ANGLE_REQ_DEG in any direction before it tips over."""
-    phi, a, L_stem, centre = _stand_layout(d, g)
+
+def _resample_ring(poly, n, start_at_max_y=True):
+    """n points along the exterior of a shapely polygon by arc length,
+    counter-clockwise, starting nearest the topmost (+y) point."""
+    from shapely.geometry import LinearRing
+    ring = LinearRing(poly.exterior.coords)
+    if not ring.is_ccw:
+        ring = LinearRing(list(ring.coords)[::-1])
+    L = ring.length
+    coords = np.asarray(ring.coords)
+    k = int(np.argmax(coords[:, 1]))
+    s0 = ring.project(__import__("shapely.geometry", fromlist=["Point"]).Point(coords[k]))
+    out = np.array([ring.interpolate((s0 + L * i / n) % L).coords[0] for i in range(n)])
+    return out
+
+
+def retriangulate_plane(mesh, z_plane: float, max_area: float = 30.0, tol: float = 1e-5):
+    """Booleans leave a flat face as a fan of long slivers; along a
+    tangent fillet their tilted vertex normals then streak across the
+    whole face when shaded.  Re-mesh every upward face lying on z_plane
+    with quality triangles (Steiner points inside, the boundary kept), so
+    the shading of the flat top is even."""
+    import triangle as _tri
+    import shapely
+    from shapely.geometry import LineString
+    v, f = mesh.vertices, mesh.faces
+    on = np.all(np.abs(v[f][:, :, 2] - z_plane) < tol, axis=1) & (mesh.face_normals[:, 2] > 0.5)
+    if on.sum() < 10:
+        return mesh
+    sel = f[on]
+    edges = np.sort(np.vstack([sel[:, [0, 1]], sel[:, [1, 2]], sel[:, [2, 0]]]), axis=1)
+    uniq, counts = np.unique(edges, axis=0, return_counts=True)
+    bnd = uniq[counts == 1]
+    # planar straight-line graph for Triangle
+    idx = np.unique(bnd)
+    remap = {int(k): i for i, k in enumerate(idx)}
+    pts2 = v[idx][:, :2]
+    segs = np.array([[remap[int(a)], remap[int(b)]] for a, b in bnd])
+    # the region the flat faces actually cover (with its holes: foot, grooves, letters);
+    # Triangle fills the convex hull, 'YY' keeps every boundary segment intact,
+    # and the triangles outside the region are dropped afterwards
+    from shapely.geometry import Polygon as _P
+    region = shapely.unary_union([_P(v[t][:, :2]) for t in sel])
+    B = _tri.triangulate({"vertices": pts2, "segments": segs}, f"pq28a{max_area:.1f}YYQ")
+    new_pts = B["vertices"]; new_tri = B["triangles"]
+    n_old = len(idx)
+    extra = np.column_stack([new_pts[n_old:], np.full(len(new_pts) - n_old, z_plane)])
+    verts = np.vstack([v, extra])
+    lut = np.concatenate([idx, np.arange(len(extra)) + len(v)])
+    faces_new = lut[new_tri]
+    cen = new_pts[new_tri].mean(axis=1)
+    inside = shapely.contains_xy(region, cen[:, 0], cen[:, 1])
+    faces_new = faces_new[inside]
+    # winding: upward
+    a = verts[faces_new[:, 1], :2] - verts[faces_new[:, 0], :2]; b = verts[faces_new[:, 2], :2] - verts[faces_new[:, 0], :2]
+    cw = (a[:, 0] * b[:, 1] - a[:, 1] * b[:, 0]) < 0
+    faces_new[cw] = faces_new[cw][:, [0, 2, 1]]
+    out = trimesh.Trimesh(vertices=verts, faces=np.vstack([f[~on], faces_new]), process=False)
+    out.merge_vertices()
+    return out if out.is_watertight else mesh
+
+
+def flat_path_glyphs(text: str, height: float, path, s_centre: float):
+    """Shapely polygons of `text` laid along a shapely LineString `path`
+    (glyph tops to the left of the direction of travel), centred at arc
+    length s_centre."""
+    from shapely.affinity import rotate as _rot, translate as _tr
+    scale = height / _cap_height()
+    bar_l = _path_bounds(TextPath((0, 0), "|", size=1.0, prop=_FONT))[0]
+
+    def pen(prefix):
+        return _path_bounds(TextPath((0, 0), prefix + "|", size=1.0, prop=_FONT))[2] - (bar_l + _bar_w())
+
+    total = pen(text) * scale
+    out = []
+    for i, ch in enumerate(text):
+        if ch.strip() == "":
+            continue
+        gb = _path_bounds(TextPath((0, 0), ch, size=1.0, prop=_FONT))
+        x_c = (pen(text[:i]) + 0.5 * (gb[0] + gb[2])) * scale - total / 2.0
+        sp = s_centre + x_c
+        if sp < 0 or sp > path.length:
+            return [], total
+        p0 = np.asarray(path.interpolate(sp).coords[0]); p1 = np.asarray(path.interpolate(min(sp + 0.5, path.length)).coords[0])
+        pm = np.asarray(path.interpolate(max(sp - 0.5, 0.0)).coords[0])
+        tg = p1 - pm; ang = math.degrees(math.atan2(tg[1], tg[0]))
+        for poly in _text_polygons(ch, None, scale=scale):
+            out.append(_tr(_rot(poly, ang, origin=(0, 0)), p0[0], p0[1]))
+    return out, total
+
+
+def build_stand(d: Design, g: BodyGeometry, loads=None):
+    """Stand in its own frame: plate on z=0, foot of the stem at the origin,
+    +y towards the elevated pole.  The base is the place's own noon
+    analemma, fattened into a flat plate: the stem stands inside the loop
+    on the reader's side (the small loop of the eight north of the tropics),
+    the other loop lies under the dial.  The analemma with its months, the
+    location and the zone are engraved on top.  The edge is flat on the
+    ground and rounds over from the top.
+
+    The analemma is scaled so the foot fits inside its loop and, if that
+    is not enough, until the whole assembly can be tilted by
+    TIP_ANGLE_REQ_DEG in any direction before it tips over."""
+    import shapely
+    from shapely.geometry import LineString, Polygon as _Poly, Point as _Pt
+    from shapely.affinity import translate as _stranslate
+    phi, a, top, centre, h_v = _stand_layout(d, g)
     up_side = np.array([0.0, -math.sin(phi), math.cos(phi)])  # = -y_dial
-    R_out = g.R_out
-    top = L_stem * a                      # pin base on the polar axis
     loads = list(loads or [])
     r0 = g.stem_r
-    y_f = 0.45 * float(top[1])            # the stem leaves the pebble at its centre
-    base_c = np.array([0.0, y_f, 0.0])
-    f = 1.1 * r0
-    r_meet = 1.75 * r0 + f                # foot round meets the pebble here
+    t_p = 5.0                              # plate thickness
+    f = 3.5                                # foot round
+    r_foot = 1.0 * r0
+    r_meet = r_foot + f                    # radius of the foot on the plate
+    z_meet = t_p - 0.15
     tan_req = math.tan(math.radians(TIP_ANGLE_REQ_DEG))
+    S = 96
 
-    def pebble_zf(rn):
-        return (max(1.0 - rn ** (1.0 / 0.42), 0.0)) ** (1.0 / 2.6) if rn < 1.0 else 0.0
+    # --- stem: straight up through the foot round and the vertical rise, then a cubic bend
+    Pv = np.array([0.0, 0.0, z_meet + f + 1.0 + h_v])
+    H = float(np.linalg.norm(top - Pv))
+    P1 = Pv + np.array([0.0, 0.0, 0.42 * H])
+    P2 = top - a * (0.42 * H)
+    ts = np.linspace(0.0, 1.0, 70)
+    bend = np.array([(1 - t) ** 3 * Pv + 3 * (1 - t) ** 2 * t * P1 + 3 * (1 - t) * t * t * P2 + t ** 3 * top for t in ts])
+    z0 = 0.5
+    n_up = max(int((Pv[2] - z0) / 0.6), 8)
+    straight = np.array([[0.0, 0.0, z0 + (Pv[2] - z0) * t] for t in np.linspace(0.0, 1.0, n_up, endpoint=False)])
+    path = np.vstack([straight, bend])
+    seg = np.linalg.norm(np.diff(path, axis=0), axis=1)
+    tt = np.concatenate([[0.0], np.cumsum(seg)]); tt /= tt[-1]
+    radii = r0 * (1.0 - 0.16 * tt + 0.31 * tt * tt)     # r at the foot, a slight waist, 1.15 r at the top
+    s_up = path[:, 2] - z_meet
+    u = np.clip(f - s_up, 0.0, f)
+    flare = np.where(s_up < 0.0, f, f - np.sqrt(np.clip(f * f - u * u, 0.0, None)))
+    stem = _tube(path, radii + flare, sections=S)
+    stem_vol, stem_com = float(stem.volume), np.asarray(stem.center_mass)
 
-    S = 96                                # angular sections shared by pebble, round and stem
+    # --- the analemma and its two loops
+    pts_u, month_idx = noon_analemma(d)
 
-    def make_body(a_x, a_yp, a_ym, h_b):
-        """Pebble, foot round and stem as ONE surface (no boolean, so the
-        tangential junctions carry no sliver triangles): bottom disc, egg
-        dome from the edge inward, quarter round up into the stem, the stem
-        tube, top cap."""
-        th = np.linspace(0.0, 2 * math.pi, S, endpoint=False)
-        cth, sth = np.cos(th), np.sin(th)
+    def noded(pts):
+        loop = np.vstack([pts, pts[:1]])
+        return shapely.unary_union([LineString(loop[i:i + 2]) for i in range(len(loop) - 1)])
 
-        def dome_pts(r):
-            ky = np.where(sth > 0, a_yp / a_x, a_ym / a_x)
-            blend = _smoothstep((r - r_meet) / max(a_x - r_meet, 1.0))
-            k = 1.0 + (ky - 1.0) * blend            # circular at the foot, egg at the edge
-            x, y = r * cth, r * sth * k
-            rn = np.hypot(x / a_x, y / np.where(y > 0, a_yp, a_ym))
-            z = h_b * np.array([pebble_zf(v) for v in rn])
-            return x, y, z
+    lobes = list(shapely.polygonize([noded(pts_u[::2])]).geoms)
+    lobes = sorted(lobes, key=lambda q: q.centroid.y)
+    near = lobes[0] if len(lobes) > 1 else max(lobes, key=lambda q: q.area)   # the loop on the reader's side
+    bx = near.bounds
+    kx = float(min(max((bx[3] - bx[1]) / max(bx[2] - bx[0], 1e-6), 1.0), 8.0))  # make that loop roughly round
+    x_ref = float(near.centroid.x)
 
-        z_at_meet = dome_pts(r_meet)[2]
-        z_meet = float(z_at_meet.min()) - 0.3
-        rings = []
-        # dome: from the edge (z = 0) inward to the foot circle, dense near the steep edge
-        n_d = 44
-        for j in range(n_d + 1):
-            u = j / n_d
-            r = a_x - (a_x - r_meet) * (u ** 1.7)
-            x, y, z = dome_pts(r)
-            sink = 1.0 - _smoothstep((r - r_meet) / 14.0)
-            z = z - (z_at_meet - z_meet) * sink      # settle onto the round's outer ring
-            if j == 0:
-                z = np.zeros_like(z)
-            rings.append(np.stack([x, y + y_f, z], -1))
-        # quarter round from the foot circle up into the stem
-        for al in np.linspace(math.pi / 2, 0.0, 12)[1:]:
-            r = r_meet - f * math.cos(al)
-            z = z_meet + f - f * math.sin(al)
-            rings.append(np.stack([r * cth, r * sth + y_f, np.full(S, z)], -1))
-        # stem: vertical for a moment, then a cubic bend into the polar axis
-        Pv = np.array([0.0, y_f, z_meet + f])
-        Pv2 = Pv + np.array([0.0, 0.0, 1.5])
-        H = float(np.linalg.norm(top - Pv2))
-        P1 = Pv2 + np.array([0.0, 0.0, 0.40 * H])
-        P2 = top - a * (0.40 * H)
-        ts = np.linspace(0.0, 1.0, 70)
-        bend = np.array([(1 - t) ** 3 * Pv2 + 3 * (1 - t) ** 2 * t * P1 + 3 * (1 - t) * t * t * P2 + t ** 3 * top for t in ts])
-        path = np.vstack([Pv[None, :], bend])
-        seg = np.linalg.norm(np.diff(path, axis=0), axis=1)
-        tt = np.concatenate([[0.0], np.cumsum(seg)]); tt /= tt[-1]
-        radii = r0 * (1.75 - 1.45 * tt + 0.85 * tt * tt)     # 1.75 r at the foot, waist, 1.15 r at the top
-        w = _smoothstep(tt * float(np.sum(seg)) / 10.0)      # leave the round with no kink
-        radii = (1.0 - w) * 1.75 * r0 + w * radii
-        tang = np.gradient(path, axis=0); tang /= np.linalg.norm(tang, axis=1, keepdims=True)
-        B = np.array([1.0, 0.0, 0.0])
-        for i in range(1, len(path)):
-            N = np.cross(tang[i], B); N /= np.linalg.norm(N)
-            rings.append(path[i] + radii[i] * (cth[:, None] * B + sth[:, None] * N))
-        verts = np.vstack(rings)
-        n_r = len(rings)
+    def stretched(pts, sc):
+        return np.stack([(x_ref + (pts[:, 0] - x_ref) * kx) * sc, pts[:, 1] * sc], -1)
+
+    near_k = _Poly(stretched(np.asarray(near.exterior.coords), 1.0))
+    c_ins, r_ins = shapely.maximum_inscribed_circle(near_k, tolerance=0.01).coords[0], None
+    c_ins = np.asarray(c_ins)
+    r_ins = float(near_k.exterior.distance(_Pt(c_ins)))
+    sc = (r_meet + 3.0) / max(r_ins, 1e-6)                # the foot fits inside the loop with 3 mm to spare
+
+    def make_plate(sc, w):
+        """Plate: the stretched analemma, foot at the origin, buffered by
+        w; flat bottom, quarter-round edge of radius t_p from the top."""
+        pts = stretched(pts_u, sc) - c_ins * sc
+        curve = noded(pts[::3])
+        base = curve.buffer(w - t_p, join_style=1, cap_style=1)         # the flat top
+        if base.geom_type != "Polygon":
+            base = max(base.geoms, key=lambda q: q.area)
+        base = _Poly(base.exterior.coords)
+        rings, zs = [], []
+        specs = [(w - 2.5, 0.0)]                                        # inset bottom ring (cap)
+        specs += [(w - t_p + t_p * math.cos(th), t_p * math.sin(th)) for th in np.linspace(0.0, math.pi / 2, 13)]
+        specs += [(w - t_p - 2.5, t_p)]                                 # inset top ring (cap)
+        for off_k, z_k in specs:
+            rel = off_k - (w - t_p)
+            poly = base if abs(rel) < 1e-9 else base.buffer(rel, join_style=1)
+            if poly.geom_type != "Polygon":
+                poly = max(poly.geoms, key=lambda q: q.area)
+            poly = _Poly(poly.exterior.coords)
+            rings.append(_resample_ring(poly, 4 * S)); zs.append(z_k)
+        n_r = len(rings); N = 4 * S
+        verts = np.vstack([np.column_stack([r, np.full(N, z)]) for r, z in zip(rings, zs)])
         faces = []
         for i in range(n_r - 1):
-            o0, o1 = i * S, (i + 1) * S
-            for k in range(S):
-                k1 = (k + 1) % S
+            o0, o1 = i * N, (i + 1) * N
+            for k in range(N):
+                k1 = (k + 1) % N
                 faces += [[o0 + k, o1 + k, o1 + k1], [o0 + k, o1 + k1, o0 + k1]]
-        c0 = len(verts); verts = np.vstack([verts, [[0.0, y_f, 0.0]]])
-        c1 = len(verts); verts = np.vstack([verts, path[-1][None, :]])
-        base_o = (n_r - 1) * S
-        for k in range(S):
-            k1 = (k + 1) % S
-            faces.append([c0, k1, k])
-            faces.append([c1, base_o + k, base_o + k1])
+        _, tri = trimesh.creation.triangulate_polygon(_Poly(rings[0]), engine="earcut")
+        for t in tri:
+            faces.append([t[0], t[2], t[1]])
+        _, tri2 = trimesh.creation.triangulate_polygon(_Poly(rings[-1]), engine="earcut")
+        top_o = (n_r - 1) * N
+        for t in tri2:
+            faces.append([top_o + t[0], top_o + t[1], top_o + t[2]])
         m = trimesh.Trimesh(vertices=verts, faces=np.asarray(faces), process=True)
         trimesh.repair.fix_normals(m)
         if m.volume < 0:
             m.invert()
-        return m
+        return m, base, curve, pts
 
-    a_x = max(0.55 * R_out, 40.0)
-    a_yp = a_ym = a_x
-    h_b = max(8.0, 0.11 * a_x)
-    for _ in range(6):
-        body = make_body(a_x, a_yp, a_ym, h_b)
-        parts = loads + [(float(body.volume), np.asarray(body.center_mass))]
+    # --- size for stability
+    w = 20.0
+    for _ in range(4):
+        plate, flat_top, curve, pts = make_plate(sc, w)
+        parts = loads + [(stem_vol, stem_com), (float(plate.volume), np.asarray(plate.center_mass))]
         V = sum(v for v, _ in parts)
         com = sum(v * np.asarray(c) for v, c in parts) / V
         need = float(com[2]) * tan_req + 6.0
-        # footprint margins from the centre of mass: along +y, -y and sideways
-        dy = float(com[1]) - y_f
-        dx = abs(float(com[0]))
-        a_yp = max(a_x, dy + need, r_meet + 6.0)
-        a_ym = max(a_x, -dy + need, r_meet + 6.0)
-        chord = math.sqrt(max(1.0 - (dy / (a_yp if dy > 0 else a_ym)) ** 2, 0.0))
-        if a_x * chord - dx < need:
-            a_x = (need + dx) / max(chord, 0.5)
-        h_b = max(8.0, 0.11 * a_x)
-    body = make_body(a_x, a_yp, a_ym, h_b)
-    # final numbers with the body actually built
-    parts = loads + [(float(body.volume), np.asarray(body.center_mass))]
-    V = sum(v for v, _ in parts)
-    com = sum(v * np.asarray(c) for v, c in parts) / V
-    dy = float(com[1]) - y_f
-    dx = abs(float(com[0]))
-    m_x = a_x * math.sqrt(max(1.0 - (dy / (a_yp if dy > 0 else a_ym)) ** 2, 0.0)) - dx
-    margin = min(a_yp - dy, a_ym + dy, m_x)
-    report = {"com": [float(x) for x in com], "margin_mm": float(margin),
+        c2 = _Pt(float(com[0]), float(com[1]))
+        outline = flat_top.buffer(t_p, join_style=1)
+        margin = float(outline.exterior.distance(c2)) if outline.contains(c2) else -float(outline.exterior.distance(c2))
+        if margin >= need:
+            break
+        sc *= 1.0 + 0.6 * (need - margin) / max(margin, 5.0)
+    outline = flat_top.buffer(t_p, join_style=1)
+    report = {"com": [float(x) for x in com], "margin_mm": margin,
               "tip_angle_deg": float(math.degrees(math.atan2(margin, max(float(com[2]), 1e-6)))),
-              "base_semi_axes": [float(a_x), float(a_yp), float(a_ym)],
+              "plate_bounds": [float(v) for v in outline.bounds], "plate_thickness": t_p,
               "required_tip_angle_deg": TIP_ANGLE_REQ_DEG}
-
-    def dome_z(x, y):
-        yy = y - y_f
-        rn = math.hypot(x / a_x, yy / (a_yp if yy > 0 else a_ym))
-        return h_b * pebble_zf(rn)
 
     rot = trimesh.geometry.align_vectors([0, 0, 1.0], a)
     pin = _cyl(g.pin_r, g.pin_len)
     pin.apply_transform(rot)
-    pin.apply_translation((L_stem + g.pin_len / 2.0 - 0.01) * a)
+    pin.apply_translation(top + (g.pin_len / 2.0 - 0.01) * a)
     flat = pin_flat_offset(g)
     cutbox = trimesh.creation.box((4 * g.pin_r, 4 * g.pin_r, g.pin_len + 2))
     cutbox.apply_transform(rot)
-    cutbox.apply_translation((L_stem + g.pin_len / 2.0) * a + up_side * (flat + 2 * g.pin_r))
+    cutbox.apply_translation(top + (g.pin_len / 2.0) * a + up_side * (flat + 2 * g.pin_r))
     pin = trimesh.boolean.difference([pin, cutbox], engine="manifold")
+    body = trimesh.boolean.union([plate, stem, pin], engine="manifold")
 
-    body = trimesh.boolean.union([body, pin], engine="manifold")
+    # --- engraving: the analemma with month ticks and initials, location and zone
     cutters = []
-    # location and zone on the pebble, on the equator side where the reader stands
-    y_edge = y_f - a_ym
-    room = a_ym - r0 * 1.9
-    h1 = min(4.5, max(3.0, room * 0.22))
-    h2 = h1 * 0.72
-    y1 = y_f - r0 * 2.1 - h1 / 2.0
-    y2 = y1 - h1 / 2.0 - 2.0 - h2 / 2.0
-    lines = []
-    for text, h, y in [(location_text(d.params.lat, d.params.lon), h1, y1), (d.params.zone_label, h2, y2)]:
-        if not text or y - h / 2.0 < y_edge + 6.0:
+    foot = _Pt(0.0, 0.0).buffer(r_meet + 1.5)
+    inner = flat_top.buffer(-2.0)
+
+    def engrave(poly):
+        if poly is None or poly.is_empty:
+            return
+        for q in (poly.geoms if hasattr(poly, "geoms") else [poly]):
+            q = q.buffer(0)
+            if q.is_empty or q.area < 0.05:
+                continue
+            for qq in (q.geoms if hasattr(q, "geoms") else [q]):
+                m = trimesh.creation.extrude_polygon(qq, g.engrave + 1.0)
+                if not m.is_volume:
+                    continue
+                m.apply_translation([0, 0, t_p - g.engrave])
+                cutters.append(m)
+
+    full = noded(pts)
+    groove = full.buffer(0.75, join_style=1).difference(foot)
+    loop = np.vstack([pts, pts[:1]])
+    tang = np.gradient(loop, axis=0)[:-1]
+    tang /= np.linalg.norm(tang, axis=1, keepdims=True)
+    lobes_k = list(shapely.polygonize([full]).geoms)
+    letters = "JFMAMJJASOND"
+    for m_i, k in enumerate(month_idx):
+        pnt = pts[k]; tg = tang[k]; nrm = np.array([-tg[1], tg[0]])
+        probe = _Pt(pnt[0] + nrm[0] * 1.5, pnt[1] + nrm[1] * 1.5)
+        if any(lb.contains(probe) for lb in lobes_k):      # point outwards, away from the loops
+            nrm = -nrm
+        tick = LineString([pnt + nrm * 1.1, pnt + nrm * 3.6]).buffer(0.4)
+        engrave(tick.difference(foot))
+        cx, cy = pnt + nrm * 6.2
+        for poly in _text_polygons(letters[m_i], 3.8):
+            gl = _stranslate(poly, cx, cy)
+            if inner.contains(gl) and not foot.intersects(gl):
+                engrave(gl)
+    engrave(groove)
+    # location on the right flank of the far loop, zone on the left, along the plate
+    far = max(lobes_k, key=lambda q: q.centroid.y) if len(lobes_k) > 1 else lobes_k[0]
+    band = full.buffer(w - t_p - 4.4, join_style=1)
+    ring = band.exterior if band.geom_type == "Polygon" else max(band.geoms, key=lambda q: q.area).exterior
+    rc = np.asarray(ring.coords)
+    fy0, fy1 = far.bounds[1], far.bounds[3]
+    for text, h, side in [(location_text(d.params.lat, d.params.lon), 4.0, +1), (d.params.zone_label, 3.2, -1)]:
+        if not text:
             continue
-        # the line must fit the pebble's width at its height, with 5 mm to spare
-        chord = 2.0 * a_x * math.sqrt(max(1.0 - ((y - y_f) / a_ym) ** 2, 0.0)) - 10.0
-        polys = _text_polygons(text, h)
-        if not polys:
+        sel = (np.sign(rc[:, 0]) == side) & (rc[:, 1] > fy0 + 0.15 * (fy1 - fy0)) & (rc[:, 1] < fy1 - 0.1 * (fy1 - fy0))
+        seg_pts = rc[sel]
+        if len(seg_pts) < 4:
             continue
-        width = max(p_.bounds[2] for p_ in polys) - min(p_.bounds[0] for p_ in polys)
-        if width > chord:
-            h = h * chord / width
-        lines.append((text, h, y))
-    for text, h, y in lines:
-        # every glyph gets a flat floor tilted to the local dome: the
-        # lettering follows the pebble, yet its floors stay clean planes
-        for poly in _text_polygons(text, h):
-            cx, cy = poly.centroid.x, poly.centroid.y + y
-            zc = dome_z(cx, cy)
-            gx = (dome_z(cx + 0.05, cy) - dome_z(cx - 0.05, cy)) / 0.1
-            gy = (dome_z(cx, cy + 0.05) - dome_z(cx, cy - 0.05)) / 0.1
-            n_c = np.array([-gx, -gy, 1.0])
-            n_c /= np.linalg.norm(n_c)
-            prism = trimesh.creation.extrude_polygon(poly, h_b + 4.0)
-            prism.apply_translation([0, y, 0.3 * h_b])
-            half = trimesh.creation.box((6 * h, 6 * h, 6 * h))
-            half.apply_translation([0, 0, -3 * h])                 # top face on z = 0
-            half.apply_transform(trimesh.geometry.align_vectors([0, 0, 1.0], n_c))
-            half.apply_translation(np.array([cx, cy, zc]) - g.engrave * n_c)
-            cut = trimesh.boolean.difference([prism, half], engine="manifold")
-            if not cut.is_empty:
-                cutters.append(cut)
-    stand = _largest_body(trimesh.boolean.difference([body, trimesh.boolean.union(cutters, engine="manifold")], engine="manifold"))
-    info = {"stem_length": L_stem, "dial_centre": centre.tolist(), "axis": a.tolist(),
-            "base_radius": float(max(a_x, a_yp, a_ym)), "base_semi_axes": [float(a_x), float(a_yp), float(a_ym)],
-            "base_centre_y": y_f, "base_height": h_b, "tilt_deg": math.degrees(phi), "stability": report}
+        seg_pts = seg_pts[np.argsort(seg_pts[:, 1] * side)]     # right side reads towards the pole, left side back
+        pth = LineString(seg_pts)
+        for h_try in (h, 0.85 * h, 0.7 * h):
+            glyphs, total = flat_path_glyphs(text, h_try, pth, pth.length / 2.0)
+            if glyphs and all(inner.contains(gp) and not foot.intersects(gp) for gp in glyphs):
+                for gp in glyphs:
+                    engrave(gp)
+                break
+    stand = body if not cutters else _largest_body(trimesh.boolean.difference([body, trimesh.boolean.union(cutters, engine="manifold")], engine="manifold"))
+    stand = retriangulate_plane(stand, t_p)
+    minx, miny, maxx, maxy = outline.bounds
+    info = {"stem_length": float(np.sum(seg)), "dial_centre": centre.tolist(), "axis": a.tolist(),
+            "base_radius": float(0.5 * max(maxx - minx, maxy - miny)),
+            "plate_bounds": [float(minx), float(miny), float(maxx), float(maxy)], "plate_thickness": t_p,
+            "base_centre_y": float(0.5 * (miny + maxy)), "base_height": t_p,
+            "tilt_deg": math.degrees(phi), "stability": report}
     return stand, info
 
 
