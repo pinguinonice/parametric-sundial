@@ -242,7 +242,7 @@ function startMaking(body) {
   const ah = autoHours(body);
   makingFacts({ sunrise_earliest: ah.earliest, sunset_latest: ah.latest, hour_first: body.hour_first ?? ah.first, hour_last: body.hour_last ?? ah.last,
     minute_ticks: body.scale_radius * Math.PI / 720 >= 0.7, tilt_deg: Math.abs(body.lat) }, body);
-  fetch(`/api/design?${q}`).then((r) => r.json()).then((d) => { state.design = d; makingFacts(d, body, true); redrawFigures(); }).catch(() => {});
+  fetch(`/api/design?${q}`).then((r) => r.json()).then((d) => { state.design = d; makingFacts(d, body, true); redrawFigures(); animateProfiles(); }).catch(() => {});
   animateAnalemma();
   const now = zoneNow(body);
   drawSunPath($('sunPath'), body, now.y, now.mo, now.d, now.mins, { hours: (h) => fmtMins(h * 60) });
@@ -274,6 +274,15 @@ function animateAnalemma() {
   if (reduce) { drawAnalemma($('analemma'), p, labels, 1); return; }
   const t0 = performance.now(), dur = 2500;
   const tick = (now) => { const k = Math.min(1, (now - t0) / dur); drawAnalemma($('analemma'), p, labels, k); if (k < 1) requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+}
+function animateProfiles() {
+  const src = state.design; if (!src) return;
+  const words = { empty: t('ch2capEmpty'), scalePlane: t('scalePlane') };
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce || !$('profileFig').clientWidth) return;
+  const t0 = performance.now(), dur = 1800;
+  const tick = (now) => { const k = Math.min(1, (now - t0) / dur); drawProfiles($('profileFig'), src.profiles, rollerLabels(), words, 1 - Math.pow(1 - k, 2)); if (k < 1) requestAnimationFrame(tick); };
   requestAnimationFrame(tick);
 }
 function rotateWhy() {

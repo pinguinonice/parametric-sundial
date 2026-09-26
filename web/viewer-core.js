@@ -351,7 +351,7 @@ export function createPartStage(canvas, geometry, kind) {
   return () => { alive = false; controls.dispose(); renderer.dispose(); renderer.forceContextLoss(); };
 }
 
-export function drawProfiles(canvas, profiles, labels, words = {}) {
+export function drawProfiles(canvas, profiles, labels, words = {}, frac = 1) {
   const W = { empty: 'compute a dial to see its two rollers', scalePlane: 'scale plane', ...words };
   const { ctx, w, h } = setupCanvas(canvas);
   const ink = cssVar('--ink') || '#222', muted = cssVar('--muted') || '#777', brass = cssVar('--brass') || '#b4842a', line = cssVar('--line') || '#ddd';
@@ -370,17 +370,20 @@ export function drawProfiles(canvas, profiles, labels, words = {}) {
     const cx = slot * (k + 0.5);
     const pr = profiles[n];
     const Y = (z) => h - pad.b - (z - zMin) * scale;
+    ctx.save();
+    if (frac < 1) { ctx.beginPath(); ctx.rect(0, h - pad.b - (h - pad.t - pad.b) * frac, w, (h - pad.t - pad.b) * frac + pad.b); ctx.clip(); }   // grows from the scale plane upwards
     ctx.beginPath();
     pr.z.forEach((z, i) => { const X = cx + pr.r[i] * scale; i ? ctx.lineTo(X, Y(z)) : ctx.moveTo(X, Y(z)); });
     for (let i = pr.z.length - 1; i >= 0; i--) ctx.lineTo(cx - pr.r[i] * scale, Y(pr.z[i]));
     ctx.closePath();
     ctx.fillStyle = brass; ctx.globalAlpha = 0.85; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.restore();
     ctx.strokeStyle = line; ctx.setLineDash([3, 4]); ctx.beginPath(); ctx.moveTo(cx, pad.t - 10); ctx.lineTo(cx, h - pad.b + 10); ctx.stroke(); ctx.setLineDash([]);
     ctx.strokeStyle = muted; ctx.beginPath(); ctx.moveTo(cx - rMax * scale - 14, Y(0)); ctx.lineTo(cx + rMax * scale + 14, Y(0)); ctx.stroke();
     ctx.fillStyle = ink; ctx.font = '600 20px "Cormorant Garamond", Georgia, serif'; ctx.textAlign = 'center';
     ctx.fillText(labels[n].name, cx, 22);
     ctx.font = '12px "Source Sans 3", system-ui, sans-serif'; ctx.fillStyle = muted;
     ctx.fillText(labels[n].top, cx, pad.t - 2); ctx.fillText(labels[n].bottom, cx, h - 8);
-    ctx.textAlign = 'left'; ctx.fillText(W.scalePlane, cx + rMax * scale + 18, Y(0) + 4);
+    if (k === 0) { ctx.textAlign = 'center'; ctx.fillText(W.scalePlane, w / 2, Y(0) - 6); }   // once, between the two rollers
   });
 }

@@ -72,6 +72,10 @@ class GenerateRequest(BaseModel):
     tz_name: str = Field("", max_length=64)       # IANA zone, so the viewer can show "now" with summer time
 
 
+def _latest_path():
+    return CACHE_DIR / "latest.json"
+
+
 def _slug(text: str) -> str:
     import unicodedata
     t = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
@@ -80,6 +84,32 @@ def _slug(text: str) -> str:
 
 
 PLA_DENSITY = 1.24   # g/cm3
+CACHE_MAX_MB = float(os.environ.get("SUNDIAL_CACHE_MAX_MB", "1500"))   # each dial is about 40 MB on disk
+
+
+def prune_cache(keep: set = ()):
+    """Drop the oldest dial folders until the cache is under CACHE_MAX_MB,
+    never the ones in ``keep`` (the dial just made, the opening one)."""
+    import shutil
+    try:
+        latest = json.loads(_latest_path().read_text()).get("id")
+    except Exception:
+        latest = None
+    keep = set(keep) | ({latest} if latest else set())
+    dirs = []
+    for d in CACHE_DIR.iterdir():
+        if d.is_dir() and (d / "info.json").exists():
+            size = sum(f.stat().st_size for f in d.iterdir() if f.is_file())
+            dirs.append((d.stat().st_mtime, size, d))
+    total = sum(sz for _, sz, _ in dirs)
+    for _, size, d in sorted(dirs):
+        if total <= CACHE_MAX_MB * 1e6:
+            break
+        if d.name in keep:
+            continue
+        shutil.rmtree(d, ignore_errors=True)
+        total -= size
+
 BEDS_MM = (180, 220, 250, 300, 350, 400)
 
 
@@ -335,6 +365,10 @@ def generate(req: GenerateRequest, progress=None):
             zf.write(out / fn, arcname=fn)
     info["zip_bytes"] = (out / "sundial.zip").stat().st_size
     meta_path.write_text(json.dumps(info))
+    try:
+        prune_cache(keep={key})
+    except Exception:
+        pass
     return info
 
 
@@ -434,10 +468,6 @@ _jobs_lock = threading.Lock()
 _worker_started = False
 MAX_QUEUE = int(os.environ.get("SUNDIAL_MAX_QUEUE", "12"))        # dials waiting at once
 MAX_PER_CLIENT = int(os.environ.get("SUNDIAL_MAX_PER_CLIENT", "2"))  # pending dials per address
-
-
-def _latest_path():
-    return CACHE_DIR / "latest.json"
 
 
 def _log_path():

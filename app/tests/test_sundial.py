@@ -290,3 +290,20 @@ def test_roller_screws_into_the_hub(stuttgart):
     r.apply_translation([0, 0, parts["dial_info"]["hub_top_z"] - g.pin_len + g.thread_pitch / 2])
     inter = trimesh.boolean.intersection([dial, r], engine="manifold")
     assert (0.0 if inter.is_empty else float(inter.volume)) > 5.0
+
+
+def test_cache_pruning(tmp_path, monkeypatch):
+    import json
+    import sundialweb.api as api
+    monkeypatch.setattr(api, "CACHE_DIR", tmp_path)
+    monkeypatch.setattr(api, "CACHE_MAX_MB", 0.005)   # 5 kB
+    for i, name in enumerate(["old", "mid", "new"]):
+        d = tmp_path / name; d.mkdir()
+        (d / "info.json").write_text("{}")
+        (d / "dial.stl").write_bytes(b"x" * 3000)
+        import os, time
+        os.utime(d, (time.time() - 100 + i, time.time() - 100 + i))
+    (tmp_path / "latest.json").write_text(json.dumps({"id": "old", "made_at": 0}))
+    api.prune_cache(keep={"new"})
+    left = {d.name for d in tmp_path.iterdir() if d.is_dir()}
+    assert "new" in left and "old" in left and "mid" not in left   # the kept one and the opening dial survive
