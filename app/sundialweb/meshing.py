@@ -1150,9 +1150,8 @@ def flat_path_glyphs(text: str, height: float, path, s_centre: float):
 def build_stand(d: Design, g: BodyGeometry, loads=None):
     """Stand in its own frame: plate on z=0, foot of the stem at the origin,
     +y towards the elevated pole.  The base is the place's own noon
-    analemma, fattened into a flat plate: the stem stands inside the loop
-    on the reader's side (the small loop of the eight north of the tropics),
-    the other loop lies under the dial.  The analemma with its months, the
+    analemma, fattened into a flat plate: the stem stands inside the
+    smaller loop of the eight, the big loop carries the rest of the plate.  The analemma with its months, the
     location and the zone are engraved on top.  The edge is flat on the
     ground and rounds over from the top.
 
@@ -1202,8 +1201,7 @@ def build_stand(d: Design, g: BodyGeometry, loads=None):
         return shapely.unary_union([LineString(loop[i:i + 2]) for i in range(len(loop) - 1)])
 
     lobes = list(shapely.polygonize([noded(pts_u[::2])]).geoms)
-    lobes = sorted(lobes, key=lambda q: q.centroid.y)
-    near = lobes[0] if len(lobes) > 1 else max(lobes, key=lambda q: q.area)   # the loop on the reader's side
+    near = min(lobes, key=lambda q: q.area)       # the stem stands in the smaller loop of the eight
     bx = near.bounds
     kx = float(min(max((bx[3] - bx[1]) / max(bx[2] - bx[0], 1e-6), 1.0), 8.0))  # make that loop roughly round
     x_ref = float(near.centroid.x)
@@ -1328,8 +1326,8 @@ def build_stand(d: Design, g: BodyGeometry, loads=None):
             if inner.contains(gl) and not foot.intersects(gl):
                 engrave(gl)
     engrave(groove)
-    # location on the right flank of the far loop, zone on the left, along the plate
-    far = max(lobes_k, key=lambda q: q.centroid.y) if len(lobes_k) > 1 else lobes_k[0]
+    # location on the right flank of the big loop, zone on the left, along the plate
+    far = max(lobes_k, key=lambda q: q.area)
     band = full.buffer(w - t_p - 4.4, join_style=1)
     ring = band.exterior if band.geom_type == "Polygon" else max(band.geoms, key=lambda q: q.area).exterior
     rc = np.asarray(ring.coords)

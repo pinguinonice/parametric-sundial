@@ -78,8 +78,8 @@ the cache is wiped on restart, which is fine.
   calibration; the collar seats on the hub and sets the height). The stand has a keyed pin so the
   dial can only sit in the right orientation. Its base is the place's own noon analemma (the
   sun's hour angle at twelve o'clock against its distance from the zenith), fattened into a flat
-  plate with the months engraved along the curve; the stem stands inside the loop on the reader's
-  side (the small loop of the eight north of the tropics) and the other loop lies under the dial.
+  plate with the months engraved along the curve; the stem stands inside the smaller loop of the
+  eight on both hemispheres.
   The analemma is scaled so the foot fits its loop and, if needed, until the assembled dial can be
   tilted 22° in any direction before it tips. The API reports the achieved tip angle under
   `stability`.
