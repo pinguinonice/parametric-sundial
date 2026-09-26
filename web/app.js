@@ -57,7 +57,7 @@ async function setLocation(lat, lon, pan = false) {
   if (pan) map.setView([lat, lon], Math.max(map.getZoom(), 7));
   try {
     const tz = await (await fetch(`/api/timezone?lat=${lat}&lon=${lon}`)).json();
-    $('utc').value = tz.utc_offset_h; $('label').value = tz.label;
+    $('utc').value = tz.utc_offset_h; $('label').value = tz.label; $('label').dataset.summer = tz.summer_label || '';
     state.tz = tz;
   } catch (e) { /* offline: keep manual values */ }
   tzHint(); redrawFigures();
@@ -81,7 +81,7 @@ async function search() {
 async function generate() {
   const btn = $('generate'); btn.disabled = true; $('status').textContent = t('stComputing');
   const body = {
-    lat: +$('lat').value, lon: +$('lon').value, utc_offset_h: +$('utc').value, zone_label: $('label').value,
+    lat: +$('lat').value, lon: +$('lon').value, utc_offset_h: +$('utc').value, zone_label: $('label').value, summer_label: $('label').dataset.summer || '',
     year: +$('year').value, scale_radius: +$('dia').value / 2, min_roller_radius: +$('minr').value,
     hour_first: $('autoHours').checked ? null : +$('hFirst').value, hour_last: $('autoHours').checked ? null : +$('hLast').value,
   };

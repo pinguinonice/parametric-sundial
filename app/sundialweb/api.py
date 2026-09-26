@@ -26,7 +26,7 @@ WEB_DIR = Path(__file__).resolve().parent.parent.parent / "web"
 CACHE_DIR = Path(os.environ.get("SUNDIAL_CACHE", os.path.join(tempfile.gettempdir(), "sundial-web")))
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-CACHE_VERSION = "9"  # bump when the geometry changes so cached results are rebuilt
+CACHE_VERSION = "10"  # bump when the geometry changes so cached results are rebuilt
 
 app = FastAPI(title="Bernhardt sundial generator", version="1.0")
 
@@ -36,6 +36,7 @@ class GenerateRequest(BaseModel):
     lon: float = Field(..., ge=-180.0, le=180.0)
     utc_offset_h: float = Field(..., ge=-14.0, le=14.0)
     zone_label: str = ""
+    summer_label: str = ""
     year: int = Field(default_factory=lambda: datetime.now(timezone.utc).year, ge=1900, le=2200)
     scale_radius: float = Field(75.0, ge=30.0, le=250.0)
     min_roller_radius: float = Field(4.0, ge=2.0, le=15.0)
@@ -64,14 +65,21 @@ def _timezone_info(lat: float, lon: float):
     o_jul = jul.utcoffset().total_seconds() / 3600.0
     std = min(o_jan, o_jul)
     std_dt = jan if o_jan <= o_jul else jul
+    dst_dt = jul if o_jan <= o_jul else jan
     abbr = std_dt.tzname() or ""
     if abbr.startswith(("+", "-")) or not abbr:
         abbr = ""
+    summer = ""
+    if o_jan != o_jul:
+        summer = dst_dt.tzname() or ""
+        if summer.startswith(("+", "-")) or not summer:
+            o = max(o_jan, o_jul); hs = int(abs(o)); ms = int(round((abs(o) - hs) * 60))
+            summer = f"UTC{'+' if o >= 0 else '-'}{hs}" + (f":{ms:02d}" if ms else "")
     sign = "+" if std >= 0 else "-"
     h = int(abs(std)); m = int(round((abs(std) - h) * 60))
     utc = f"UTC{sign}{h}" + (f":{m:02d}" if m else "")
     label = f"{abbr}  {utc}" if abbr else utc
-    return {"tz": name, "utc_offset_h": std, "label": label, "dst": o_jan != o_jul, "abbr": abbr, "utc": utc}
+    return {"tz": name, "utc_offset_h": std, "label": label, "dst": o_jan != o_jul, "abbr": abbr, "utc": utc, "summer_label": summer}
 
 
 @app.get("/api/timezone")
@@ -130,7 +138,7 @@ def generate(req: GenerateRequest):
         return json.loads(meta_path.read_text())
     out.mkdir(parents=True, exist_ok=True)
 
-    p = DesignParams(lat=req.lat, lon=req.lon, utc_offset_h=req.utc_offset_h, year=req.year,
+    p = DesignParams(lat=req.lat, lon=req.lon, utc_offset_h=req.utc_offset_h, year=req.year, summer_label=req.summer_label,
                      scale_radius=req.scale_radius, min_roller_radius=req.min_roller_radius,
                      hour_first=req.hour_first, hour_last=req.hour_last,
                      zone_label=req.zone_label.strip())
@@ -224,6 +232,8 @@ def _readme(info):
     zone = p["zone_label"] or "UTC%+g" % p["utc_offset_h"]
     stab = info["stability"]; thr = d["thread"]
     pb = d["plate_bounds"]; pw, pl = pb[2] - pb[0], pb[3] - pb[1]
+    summer_note = (f"  The outer row of numerals is standard time ({zone}); the inner row is summer\n  time ({p['summer_label']})."
+                   if p.get("summer_label") else "  The scale shows standard time; this zone keeps no summer time.")
     pole = "north" if p["lat"] >= 0 else "south"
     return f"""Bernhardt precision sundial, generated for
   latitude {p['lat']:.4f}, longitude {p['lon']:.4f}, zone {zone}
@@ -249,7 +259,7 @@ Assembly
   that prints without calibration; the collar, not the thread, sets the height.
   Read the time at the LEADING edge of the roller's shadow on the outer ring, where it
   crosses the tick ends.
-  The scale shows standard time; add one hour during summer time.
+{summer_note}
   Swap the roller at each solstice.
 
 Accuracy

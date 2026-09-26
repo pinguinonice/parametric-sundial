@@ -759,8 +759,8 @@ def sun_blocking_report(d: Design, g: BodyGeometry, surf: "PlateSurface", day_st
     R = d.R
     t0 = _solar.dt_to_unix(_solar.datetime(p.year, 1, 1, tzinfo=_solar.timezone.utc))
     r_hub = hub_radius(g, d)
-    z_hub_top = -surf.D0
-    z_hub_bot = z_hub_top - g.hub_len
+    z_hub_top = -surf.D0 + HUB_CUP_H
+    z_hub_bot = z_hub_top - HUB_CUP_H - g.hub_len
     blocked = []
     days = np.arange(0, 365, day_step)
     hours = np.arange(d.hour_first, d.hour_last + 1e-9, hour_step)
@@ -828,15 +828,23 @@ def build_roller(d: Design, g: BodyGeometry, rp: RollerProfile, grooves: int):
     z_collar_top = z_lo - g.neck_h
     z_collar_bot = z_collar_top - g.collar_h
     z_pin_bot = z_collar_bot - g.pin_len
-    prof = [(0.0, z_pin_bot), (g.pin_r, z_pin_bot), (g.pin_r, z_collar_bot), (cr, z_collar_bot)]
-    # identification grooves on the collar
-    gw, gd = 0.8, 0.6
-    zc = z_collar_bot
-    for k in range(grooves):
-        z0 = z_collar_bot + 0.6 + k * (gw + 0.6)
-        prof += [(cr, z0), (cr - gd, z0), (cr - gd, z0 + gw), (cr, z0 + gw)]
-    prof += [(cr, z_collar_top), (r_lo, z_collar_top)]
-    # a short straight neck, then the computed profile
+    prof = [(0.0, z_pin_bot), (g.pin_r, z_pin_bot), (g.pin_r, z_collar_bot)]
+    # the foot: a short seat of radius cr inside the hub's cup, then one
+    # continuous flare (smoothstep) up into the computed profile, so collar,
+    # neck and body are a single curve; the identification grooves are
+    # shallow rounded coves on the flare (one = winter roller, two = summer)
+    seat = HUB_CUP_H
+    z_flare0 = z_collar_bot + seat
+    span = z_lo - z_flare0
+    for z in np.arange(z_collar_bot, z_lo - 1e-9, 0.1):
+        t = min(max((z - z_flare0) / span, 0.0), 1.0)
+        r = cr + (r_lo - cr) * (t * t * (3.0 - 2.0 * t))
+        for k in range(grooves):
+            zc = z_flare0 + 1.4 + k * 1.7
+            u = (z - zc) / 0.6
+            if abs(u) < 1.0:
+                r -= 0.45 * 0.5 * (1.0 + math.cos(math.pi * u))
+        prof.append((float(r), float(z)))
     prof += [(float(r), float(z)) for r, z in zip(rp.r, rp.z)]
     # rounded cap above the last (solstice) point
     cap_h = 0.55 * r_hi
@@ -873,7 +881,15 @@ def build_dial(d: Design, g: BodyGeometry, engrave: bool = True):
     f = 3.5   # rounded top edge
     for a in np.linspace(0.0, math.pi / 2, 9)[1:]:
         prof.append(((r_hub + 4.0 - f) + f * math.cos(a), (z_top - f) + f * math.sin(a)))
-    prof.append((0.0, z_top))
+    # the top rises around the roller's seat in a concave fillet (a cup of
+    # height HUB_CUP_H), so hub and roller read as one continuous form
+    cr = collar_radius(g, d) + g.clearance + 0.15
+    rho_c = HUB_CUP_H
+    prof.append((cr + rho_c, z_top))
+    for a in np.linspace(0.0, math.pi / 2, 10)[1:]:
+        # quarter circle centred on (cr + rho_c, z_top + rho_c): from the flat top to the seat wall
+        prof.append(((cr + rho_c) - rho_c * math.sin(a), (z_top + rho_c) - rho_c * math.cos(a)))
+    prof += [(cr, z_top), (0.0, z_top)]
     hub = _revolve(prof, sections=128)
     body = trimesh.boolean.union([plate, hub], engine="manifold")
 
@@ -937,10 +953,27 @@ def engraving_cutters(d: Design, g: BodyGeometry, surf: PlateSurface):
     rho_txt = R - g.tick_zone - 1.5 - g.text_h / 2.0
     for h in range(h0, h1 + 1):
         cutters += arc_text_cutters(surf, d, str(h), g.text_h, rho_txt, float(d.psi_of_time(h)), depth)
-    # zone label, summer-time note and coordinates below the 12 mark
     small = max(3.0, g.text_h * 0.55)
-    lines = [ln for ln in [d.params.zone_label, "SUMMER TIME +1 H", location_text(d.params.lat, d.params.lon)] if ln]
-    rho_l = rho_txt - g.text_h / 2.0 - 2.5 - small / 2.0
+    summer = d.params.summer_label.strip()
+    if summer:
+        # where the place keeps summer time: a second, smaller row of numerals
+        # one hour ahead inside the standard row, as on the Stuttgart dial,
+        # with the two zone names between 12 and 13 on their rows
+        h_s = g.text_h * 0.72
+        rho_s = rho_txt - g.text_h / 2.0 - 1.2 - h_s / 2.0
+        for h in range(h0, h1 + 1):
+            cutters += arc_text_cutters(surf, d, str(h + 1), h_s, rho_s, float(d.psi_of_time(h)), depth)
+        std = (d.params.zone_label.split() or [""])[0]
+        psi_lab = float(d.psi_of_time(12.5))
+        if std:
+            cutters += arc_text_cutters(surf, d, std, small * 0.9, rho_txt, psi_lab, depth)
+        cutters += arc_text_cutters(surf, d, summer, small * 0.9, rho_s, psi_lab, depth)
+        rho_l = rho_s - h_s / 2.0 - 2.5 - small / 2.0
+        lines = [ln for ln in [d.params.zone_label, location_text(d.params.lat, d.params.lon)] if ln]
+    else:
+        rho_l = rho_txt - g.text_h / 2.0 - 2.5 - small / 2.0
+        lines = [ln for ln in [d.params.zone_label, location_text(d.params.lat, d.params.lon)] if ln]
+    # zone label and coordinates below the 12 mark
     psi12 = float(d.psi_of_time(12))
     for ln in lines:
         if rho_l - small / 2.0 > hub_radius(g, d) + 4.0:
@@ -980,6 +1013,7 @@ def _tube(path, radii, sections=48):
     return m
 
 
+HUB_CUP_H = 2.0              # the hub top rises this far around the roller's seat
 MONOTONE_TWIST = True
 RELAX_BAND_DEG = 2.0
 CLOSE_BAND_DEG = 3.0
@@ -1150,8 +1184,8 @@ def flat_path_glyphs(text: str, height: float, path, s_centre: float):
 def build_stand(d: Design, g: BodyGeometry, loads=None):
     """Stand in its own frame: plate on z=0, foot of the stem at the origin,
     +y towards the elevated pole.  The base is the place's own noon
-    analemma, fattened into a flat plate: the stem stands inside the
-    smaller loop of the eight, the big loop carries the rest of the plate.  The analemma with its months, the
+    analemma, fattened into a flat plate: the stem stands inside the loop
+    on the reader's side, the other loop lies under the dial.  The analemma with its months, the
     location and the zone are engraved on top.  The edge is flat on the
     ground and rounds over from the top.
 
@@ -1201,7 +1235,12 @@ def build_stand(d: Design, g: BodyGeometry, loads=None):
         return shapely.unary_union([LineString(loop[i:i + 2]) for i in range(len(loop) - 1)])
 
     lobes = list(shapely.polygonize([noded(pts_u[::2])]).geoms)
-    near = min(lobes, key=lambda q: q.area)       # the stem stands in the smaller loop of the eight
+    # the figure is the shadow trace of a vertical gnomon and always lies on
+    # the pole side of its foot, under the dial: the stem takes the loop on
+    # the reader's side (the small June loop north of the tropics; south of
+    # the equator the December sun stands nearly overhead, so there the big
+    # loop wraps around the foot) and the other loop lies under the dial
+    near = min(lobes, key=lambda q: q.centroid.y)
     bx = near.bounds
     kx = float(min(max((bx[3] - bx[1]) / max(bx[2] - bx[0], 1e-6), 1.0), 8.0))  # make that loop roughly round
     x_ref = float(near.centroid.x)
@@ -1326,8 +1365,8 @@ def build_stand(d: Design, g: BodyGeometry, loads=None):
             if inner.contains(gl) and not foot.intersects(gl):
                 engrave(gl)
     engrave(groove)
-    # location on the right flank of the big loop, zone on the left, along the plate
-    far = max(lobes_k, key=lambda q: q.area)
+    # location on the right flank of the far loop, zone on the left, along the plate
+    far = max(lobes_k, key=lambda q: q.centroid.y)
     band = full.buffer(w - t_p - 4.4, join_style=1)
     ring = band.exterior if band.geom_type == "Polygon" else max(band.geoms, key=lambda q: q.area).exterior
     rc = np.asarray(ring.coords)

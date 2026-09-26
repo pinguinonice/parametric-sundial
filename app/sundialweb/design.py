@@ -35,6 +35,7 @@ class DesignParams:
     hour_first: int | None = None     # None -> automatic from sunrise
     hour_last: int | None = None
     zone_label: str = ""
+    summer_label: str = ""          # e.g. "CEST": engrave a second row of summer-time numerals
 
 
 @dataclass
