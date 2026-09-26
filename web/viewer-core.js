@@ -43,6 +43,51 @@ export function sunriseMinutes(y, mo, d, params) {
   }
   return 720;
 }
+// Standard zone time at this instant for the place: {y, mo, d, mins}.
+export function zoneNow(params, unix = Date.now() / 1000) {
+  const t = new Date((unix + params.utc_offset_h * 3600) * 1000);
+  return { y: t.getUTCFullYear(), mo: t.getUTCMonth() + 1, d: t.getUTCDate(), mins: t.getUTCHours() * 60 + t.getUTCMinutes() };
+}
+// Wall-clock time (with summer time) at the place, if the browser knows the zone.
+export function wallClock(tzName, unix = Date.now() / 1000) {
+  if (!tzName) return null;
+  try {
+    const f = new Intl.DateTimeFormat('en-GB', { timeZone: tzName, hour: '2-digit', minute: '2-digit', hour12: false });
+    return f.format(new Date(unix * 1000));
+  } catch (e) { return null; }
+}
+// The first engraved hour with the sun up, starting from a moment: today if
+// the sun is still up in the engraved hours, otherwise the next morning (or,
+// in polar night, the first day the sun returns).
+export function nextLightMoment(params, design, from) {
+  const up = (y, mo, d, mins) => sunENU(zoneUnix(y, mo, d, mins / 60, params.utc_offset_h), params.lat, params.lon)[2] > 0.005;
+  const first = design.hour_first * 60, last = design.hour_last * 60;
+  if (from.mins >= first && from.mins <= last && up(from.y, from.mo, from.d, from.mins)) return { ...from, today: true };
+  let day = Date.UTC(from.y, from.mo - 1, from.d);
+  for (let k = 0; k < 200; k++) {
+    const dt = new Date(day + k * 86400000), y = dt.getUTCFullYear(), mo = dt.getUTCMonth() + 1, d = dt.getUTCDate();
+    const start = k === 0 ? Math.max(first, from.mins + 1) : first;
+    for (let m = start; m <= last; m += 5) if (up(y, mo, d, m)) return { y, mo, d, mins: m, today: k === 0, daysAhead: k };
+  }
+  return { ...from, today: true };
+}
+// Hour range the generator will engrave (same rule as design._auto_hours).
+export function autoHours(params) {
+  const year = params.year || 2026, phi = params.lat * DEG;
+  let earliest = 24, latest = 0, any = false;
+  for (let day = 0; day < 366; day++) {
+    const unix = Date.UTC(year, 0, 1) / 1000 + day * 86400 + 12 * 3600;
+    const { decl, eotMin } = sunGeometry(unix);
+    const cosH0 = -Math.tan(phi) * Math.tan(decl);
+    if (cosH0 > 1) continue;
+    const H0 = cosH0 < -1 ? 180 : Math.acos(cosH0) / DEG;
+    const tNoon = 12 - eotMin / 60 - (params.lon - 15 * params.utc_offset_h) / 15;
+    earliest = Math.min(earliest, tNoon - H0 / 15); latest = Math.max(latest, tNoon + H0 / 15); any = true;
+  }
+  if (!any) return { first: 6, last: 18, earliest: 6, latest: 18 };
+  const first = Math.max(1, Math.min(Math.floor(earliest), 11)), last = Math.max(13, Math.min(Math.ceil(latest), 23));
+  return { first: Math.abs(params.lat) > 66 ? Math.max(3, first) : first, last: Math.abs(params.lat) > 66 ? Math.min(21, last) : last, earliest, latest };
+}
 export const M4 = (rows) => new THREE.Matrix4().set(...rows.flat());
 export const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
@@ -93,10 +138,12 @@ export function createStage(canvas) {
   let info = null;
 
   function resize() {
-    const w = canvas.clientWidth, h = Math.round(w * 9 / 16);
-    if (w && (canvas.width !== w || canvas.height !== h)) { renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+    const w = canvas.clientWidth, h = canvas.clientHeight || Math.round(w * 9 / 16);
+    if (w && (canvas.width !== Math.round(w * renderer.getPixelRatio()) || camera.aspect !== w / h)) { renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
   }
-  (function loop() { resize(); controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop); })();
+  let onScreen = true;   // no rendering while scrolled away: keeps phones cool
+  if ('IntersectionObserver' in window) new IntersectionObserver((es) => { onScreen = es[0].isIntersecting; }).observe(canvas);
+  (function loop() { if (onScreen) { resize(); controls.update(); renderer.render(scene, camera); } requestAnimationFrame(loop); })();
 
   function addPart(name, geometry, rows) {
     if (parts[name]) { scene.remove(parts[name]); parts[name].geometry.dispose(); }
@@ -177,7 +224,7 @@ function setupCanvas(canvas) {
 }
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-export function drawAnalemma(canvas, params, labels = {}) {
+export function drawAnalemma(canvas, params, labels = {}, frac = 1) {
   const L = { axisEot: 'sun early  \u2190  equation of time  \u2192  sun late', axisDecl: 'height of the sun', locale: 'en', ...labels };
   const { ctx, w, h } = setupCanvas(canvas);
   const ink = cssVar('--ink') || '#222', muted = cssVar('--muted') || '#777', brass = cssVar('--brass') || '#b4842a', line = cssVar('--line') || '#ddd';
@@ -186,7 +233,7 @@ export function drawAnalemma(canvas, params, labels = {}) {
   const y = (dcl) => pad.t + (25 - dcl) / 50 * (h - pad.t - pad.b);
   ctx.clearRect(0, 0, w, h);
   ctx.font = '12px "Source Sans 3", system-ui, sans-serif'; ctx.fillStyle = muted; ctx.strokeStyle = line; ctx.lineWidth = 1;
-  for (let e = -15; e <= 15; e += 5) { ctx.beginPath(); ctx.moveTo(x(e), pad.t); ctx.lineTo(x(e), h - pad.b); ctx.stroke(); ctx.textAlign = 'center'; ctx.fillText((e > 0 ? '+' : '') + e + ' min', x(e), h - pad.b + 16); }
+  for (let e = -15; e <= 15; e += 5) { ctx.beginPath(); ctx.moveTo(x(e), pad.t); ctx.lineTo(x(e), h - pad.b); ctx.stroke(); ctx.textAlign = 'center'; ctx.fillText((e > 0 ? '+' : '') + e + (w > 520 ? ' min' : ''), x(e), h - pad.b + 16); }
   for (let dcl = -20; dcl <= 20; dcl += 10) { ctx.beginPath(); ctx.moveTo(pad.l, y(dcl)); ctx.lineTo(w - pad.r, y(dcl)); ctx.stroke(); ctx.textAlign = 'right'; ctx.fillText(dcl + '°', pad.l - 6, y(dcl) + 4); }
   ctx.fillStyle = muted; ctx.textAlign = 'center'; ctx.fillText(L.axisEot, w / 2, h - 6);
   ctx.save(); ctx.translate(12, h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(L.axisDecl, 0, 0); ctx.restore();
@@ -197,16 +244,109 @@ export function drawAnalemma(canvas, params, labels = {}) {
     const g = sunGeometry(unix);
     pts.push({ x: x(-g.eotMin), y: y(g.decl / DEG), day });
   }
-  ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.closePath();
-  ctx.strokeStyle = brass; ctx.lineWidth = 2.2; ctx.stroke();
+  const nShow = Math.max(2, Math.round(pts.length * Math.min(1, frac)));
+  ctx.beginPath(); pts.slice(0, nShow).forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); if (frac >= 1) ctx.closePath();
+  ctx.strokeStyle = brass; ctx.lineWidth = 2.2; ctx.lineJoin = 'round'; ctx.stroke();
   ctx.fillStyle = ink; ctx.font = '600 12px "Source Sans 3", system-ui, sans-serif';
   for (let m = 0; m < 12; m++) {
     const day = Math.round((Date.UTC(year, m, 1) - Date.UTC(year, 0, 1)) / 86400000);
+    if (day >= nShow) continue;
     const p = pts[day]; ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, 7); ctx.fill();
     const mn = new Date(Date.UTC(year, m, 1)).toLocaleDateString(L.locale, { month: 'short', timeZone: 'UTC' });
     ctx.textAlign = p.x > w / 2 ? 'left' : 'right'; ctx.fillText(mn, p.x + (p.x > w / 2 ? 7 : -7), p.y + 4);
   }
   ctx.strokeStyle = muted; ctx.setLineDash([3, 4]); ctx.beginPath(); ctx.moveTo(x(0), pad.t); ctx.lineTo(x(0), h - pad.b); ctx.stroke(); ctx.setLineDash([]);
+}
+
+// Today's sun path: height of the sun over zone time, with the current moment marked.
+export function drawSunPath(canvas, params, y, mo, d, nowMins, labels = {}) {
+  const L = { hours: (hh) => String(hh), ...labels };
+  const { ctx, w, h } = setupCanvas(canvas);
+  const ink = cssVar('--ink') || '#222', muted = cssVar('--muted') || '#777', brass = cssVar('--brass') || '#b4842a', line = cssVar('--line') || '#ddd';
+  const pad = { l: 34, r: 12, t: 14, b: 26 };
+  const X = (m) => pad.l + m / 1440 * (w - pad.l - pad.r);
+  const Y = (e) => pad.t + (90 - e) / 100 * (h - pad.t - pad.b);
+  ctx.clearRect(0, 0, w, h);
+  ctx.font = '12px "Source Sans 3", system-ui, sans-serif'; ctx.fillStyle = muted; ctx.strokeStyle = line; ctx.lineWidth = 1;
+  for (let hh = 0; hh <= 24; hh += 6) { ctx.beginPath(); ctx.moveTo(X(hh * 60), pad.t); ctx.lineTo(X(hh * 60), h - pad.b); ctx.stroke(); ctx.textAlign = 'center'; ctx.fillText(L.hours(hh), X(hh * 60), h - pad.b + 16); }
+  ctx.strokeStyle = muted; ctx.beginPath(); ctx.moveTo(pad.l, Y(0)); ctx.lineTo(w - pad.r, Y(0)); ctx.stroke();
+  ctx.textAlign = 'right'; ctx.fillText('0°', pad.l - 5, Y(0) + 4); ctx.fillText('45°', pad.l - 5, Y(45) + 4);
+  const pts = [];
+  for (let m = 0; m <= 1440; m += 4) pts.push({ x: X(m), y: Y(Math.asin(Math.max(-1, Math.min(1, sunENU(zoneUnix(y, mo, d, m / 60, params.utc_offset_h), params.lat, params.lon)[2]))) / DEG) });
+  ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+  ctx.strokeStyle = brass; ctx.lineWidth = 2; ctx.stroke();
+  ctx.save(); ctx.beginPath(); ctx.rect(pad.l, pad.t, w - pad.l - pad.r, Y(0) - pad.t); ctx.clip();
+  ctx.lineTo(pts[pts.length - 1].x, Y(0)); ctx.lineTo(pts[0].x, Y(0)); ctx.closePath(); ctx.fillStyle = brass; ctx.globalAlpha = 0.12; ctx.fill(); ctx.globalAlpha = 1; ctx.restore();
+  const e = Math.asin(Math.max(-1, Math.min(1, sunENU(zoneUnix(y, mo, d, nowMins / 60, params.utc_offset_h), params.lat, params.lon)[2]))) / DEG;
+  ctx.fillStyle = e > 0 ? '#ffd36a' : muted; ctx.strokeStyle = ink; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.arc(X(nowMins), Y(e), 6, 0, 7); ctx.fill(); ctx.stroke();
+}
+
+// ---------- single parts on a build plate ---------------------------------
+const PART_COLORS = { dial: 0xd8d2c4, roller: 0xc89b46, stand: 0x4b4d52 };
+function partScene(geometry, kind) {
+  const scene = new THREE.Scene();
+  const g = geometry.index ? geometry.toNonIndexed() : geometry;
+  const geom = BufferGeometryUtils.toCreasedNormals(g, Math.PI / 7);
+  geom.computeBoundingBox();
+  const bb = geom.boundingBox, size = new THREE.Vector3(); bb.getSize(size);
+  const mat = kind === 'roller' ? new THREE.MeshStandardMaterial({ color: PART_COLORS.roller, roughness: 0.32, metalness: 0.75 })
+    : new THREE.MeshStandardMaterial({ color: PART_COLORS[kind] || 0xd8d2c4, roughness: 0.65, metalness: 0.05 });
+  const mesh = new THREE.Mesh(geom, mat); mesh.castShadow = mesh.receiveShadow = true;
+  // the meshes come in print orientation already: set the part on z = 0, centred
+  mesh.position.set(-(bb.min.x + bb.max.x) / 2, -(bb.min.y + bb.max.y) / 2, -bb.min.z);
+  scene.add(mesh);
+  const span = Math.max(size.x, size.y) * 1.25 + 20, cells = Math.ceil(span / 10);
+  const plate = new THREE.Mesh(new THREE.PlaneGeometry(cells * 10, cells * 10), new THREE.MeshStandardMaterial({ color: 0x9aa0a6, roughness: 0.9 }));
+  plate.receiveShadow = true; plate.position.z = -0.05; scene.add(plate);
+  const grid = new THREE.GridHelper(cells * 10, cells, 0x6f757c, 0x8a9096); grid.rotation.x = Math.PI / 2; grid.position.z = 0.02; scene.add(grid);
+  scene.add(new THREE.HemisphereLight(0xfff8ee, 0xb9b0a0, 0.9));
+  const sun = new THREE.DirectionalLight(0xfff1d6, 2.2); sun.position.set(span, -span * 0.6, span * 1.2); sun.castShadow = true;
+  sun.shadow.mapSize.set(1024, 1024); Object.assign(sun.shadow.camera, { left: -span, right: span, top: span, bottom: -span, near: 1, far: span * 5 });
+  scene.add(sun);
+  const radius = Math.max(size.x, size.y, size.z);
+  return { scene, radius, size, center: new THREE.Vector3(0, 0, size.z / 2) };
+}
+function partCamera(aspect, radius, center) {
+  const camera = new THREE.PerspectiveCamera(30, aspect, 1, 4000); camera.up.set(0, 0, 1);
+  const dist = radius * 2.1;
+  camera.position.set(center.x + dist * 0.75, center.y - dist * 0.75, center.z + dist * 0.55);
+  camera.lookAt(center);
+  return camera;
+}
+// one still frame, drawn through a shared offscreen renderer into a plain 2D canvas
+let thumbRenderer = null, thumbEnv = null;
+export function renderPartStill(canvas, geometry, kind) {
+  if (!thumbRenderer) {
+    thumbRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    thumbRenderer.shadowMap.enabled = true; thumbRenderer.shadowMap.type = THREE.PCFSoftShadowMap; thumbRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+    thumbEnv = new THREE.PMREMGenerator(thumbRenderer).fromScene(new RoomEnvironment(), 0.04).texture;
+  }
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.round((canvas.clientWidth || 200) * dpr), h = Math.round((canvas.clientHeight || canvas.clientWidth || 200) * dpr);
+  thumbRenderer.setSize(w, h, false);
+  const { scene, radius, center } = partScene(geometry, kind);
+  scene.environment = thumbEnv;
+  thumbRenderer.render(scene, partCamera(w / h, radius, center));
+  canvas.width = w; canvas.height = h;
+  canvas.getContext('2d').drawImage(thumbRenderer.domElement, 0, 0);
+}
+// a live view with orbit for the part dialog; returns a dispose function
+export function createPartStage(canvas, geometry, kind) {
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const { scene, radius, center } = partScene(geometry, kind);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  const w = canvas.clientWidth || 400, h = canvas.clientHeight || Math.round(w * 0.75);
+  renderer.setSize(w, h, false);
+  const camera = partCamera(w / h, radius, center);
+  const controls = new OrbitControls(camera, canvas); controls.enableDamping = true; controls.target.copy(center);
+  controls.minDistance = radius * 0.6; controls.maxDistance = radius * 6;
+  let alive = true;
+  (function loop() { if (!alive) return; controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop); })();
+  return () => { alive = false; controls.dispose(); renderer.dispose(); renderer.forceContextLoss(); };
 }
 
 export function drawProfiles(canvas, profiles, labels, words = {}) {

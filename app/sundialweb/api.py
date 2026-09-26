@@ -312,6 +312,7 @@ def generate(req: GenerateRequest, progress=None):
     with zipfile.ZipFile(out / "sundial.zip", "w", zipfile.ZIP_DEFLATED) as zf:
         for fn in list(stl_names.values()) + ["README.txt"]:
             zf.write(out / fn, arcname=fn)
+    info["zip_bytes"] = (out / "sundial.zip").stat().st_size
     meta_path.write_text(json.dumps(info))
     return info
 
@@ -535,7 +536,7 @@ def api_job_events(jid: str):
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-@app.get("/api/files/{key}/{name}")
+@app.api_route("/api/files/{key}/{name}", methods=["GET", "HEAD"])
 def api_file(key: str, name: str, download_name: str = ""):
     if not (key.isalnum() and name.replace(".", "").replace("_", "").isalnum()):
         raise HTTPException(404)

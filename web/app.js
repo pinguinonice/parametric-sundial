@@ -1,143 +1,329 @@
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { createStage, drawAnalemma, drawProfiles, sunriseMinutes } from './viewer-core.js';
+import { createStage, drawAnalemma, drawProfiles, drawSunPath, sunriseMinutes, zoneNow, wallClock, nextLightMoment, autoHours, renderPartStill, createPartStage } from './viewer-core.js';
 import { t, lang, pickLanguage, setLanguage, languageSelector } from './i18n.js';
 
 const $ = (id) => document.getElementById(id);
 const STATIC = document.documentElement.classList.contains('static');   // hosted preview: no server
 const stage = createStage($('c'));
 window.__sundialStage = stage;   // scripted camera for the visual audit
-const state = { info: null, sweep: null };
-const rollerLabels = () => { const f = (m, d) => new Date(Date.UTC(2026, m, d)).toLocaleDateString(lang(), { day: 'numeric', month: 'short', timeZone: 'UTC' }); return { roller_1: { name: 'I', top: f(5, 21), bottom: f(11, 21) }, roller_2: { name: 'II', top: f(5, 21), bottom: f(11, 21) } }; };
+const DEFAULTS = { lat: 48.7758, lon: 9.1829, dia: 150, year: new Date().getFullYear(), minr: 4 };
+const state = { info: null, design: null, tz: null, place: null, geoms: null, sweep: null, job: null, when: 'now', moment: null, whyTimer: null, partStage: null };
+const STAGE_KEYS = { queued: 'stQueued', design: 'stDesign', dial: 'stDial', roller_1: 'stR1', roller_2: 'stR2', stand: 'stStand', export: 'stExport' };
 
 setLanguage(pickLanguage(), false);
 languageSelector($('langBox'));
 const fmtDeg = (v, pos, neg) => `${Math.abs(v).toFixed(2)}° ${v >= 0 ? pos : neg}`;
+const fmtHM = (h) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`;
+const fmtMins = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+const fmtDate = (y, mo, d, opts = { day: 'numeric', month: 'long' }) => new Date(Date.UTC(y, mo - 1, d)).toLocaleDateString(lang(), { ...opts, timeZone: 'UTC' });
+const rollerLabels = () => { const f = (m, d) => new Date(Date.UTC(2026, m, d)).toLocaleDateString(lang(), { day: 'numeric', month: 'short', timeZone: 'UTC' }); return { roller_1: { name: 'I', top: f(5, 21), bottom: f(11, 21) }, roller_2: { name: 'II', top: f(5, 21), bottom: f(11, 21) } }; };
+const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* blocked */ } } };
+const session = { get(k) { try { return JSON.parse(sessionStorage.getItem(k)); } catch (e) { return null; } }, set(k, v) { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* blocked */ } } };
 
-// ------------------------------------------------------------ location & map (generator only)
-let map, marker;
 function currentParams() {
   if (STATIC && state.info) return state.info.params;
   return { lat: +$('lat').value, lon: +$('lon').value, utc_offset_h: +$('utc').value, year: +$('year').value };
 }
-function redrawFigures() {
+function showBeat(id, on) { $(id).hidden = !on; }
+
+// ============================================================ 1 · where
+let map, marker;
+function initMap() {
+  if (map || STATIC) return;
   const p = currentParams();
-  drawAnalemma($('analemma'), p, { axisEot: t('axisEot'), axisDecl: t('axisDecl'), locale: lang() });
-  $('analemmaCap').textContent = t('ch1cap', { lat: fmtDeg(p.lat, 'N', 'S'), lon: fmtDeg(p.lon, 'E', 'W') });
-  if (state.info) {
-    drawProfiles($('profileFig'), state.info.profiles, rollerLabels(), { empty: t('ch2capEmpty'), scalePlane: t('scalePlane') });
-    const d = state.info.design;
-    $('profileCap').textContent = t('ch2cap', { rmin: d.roller_r_min.toFixed(1), rmax: d.roller_r_max.toFixed(1), len: (d.roller_z_max - d.roller_z_min).toFixed(0) });
-  } else {
-    drawProfiles($('profileFig'), null, rollerLabels(), { empty: t('ch2capEmpty'), scalePlane: t('scalePlane') });
-    $('profileCap').textContent = t('ch2capEmpty');
-  }
-}
-if (!STATIC) {
-  map = L.map('map', { zoomControl: false }).setView([48.7758, 9.1829], 5);
+  map = L.map('map', { zoomControl: false }).setView([p.lat, p.lon], 6);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '&copy; OpenStreetMap' }).addTo(map);
-  marker = L.marker([48.7758, 9.1829], { draggable: true }).addTo(map);
+  marker = L.marker([p.lat, p.lon], { draggable: true }).addTo(map);
   marker.on('dragend', () => setLocation(marker.getLatLng().lat, marker.getLatLng().lng));
   map.on('click', (e) => setLocation(e.latlng.lat, e.latlng.lng));
-  $('lat').addEventListener('change', () => setLocation(+$('lat').value, +$('lon').value, true));
-  $('lon').addEventListener('change', () => setLocation(+$('lat').value, +$('lon').value, true));
-  $('utc').addEventListener('change', redrawFigures);
-  $('geoBtn').addEventListener('click', () => navigator.geolocation?.getCurrentPosition((p) => setLocation(p.coords.latitude, p.coords.longitude, true),
-    () => { $('status').textContent = t('stNoGeo'); }));
-  $('searchBtn').addEventListener('click', search);
-  $('search').addEventListener('keydown', (e) => { if (e.key === 'Enter') search(); });
-  $('dia').addEventListener('input', () => { $('diaLabel').textContent = t('dia', { mm: $('dia').value }); });
-  $('autoHours').addEventListener('change', () => { const a = $('autoHours').checked; $('hFirst').disabled = a; $('hLast').disabled = a; });
-  $('generate').addEventListener('click', generate);
 }
-async function setLocation(lat, lon, pan = false) {
+function parseCoords(q) {
+  const m = q.match(/^\s*(-?\d+(?:[.,]\d+)?)\s*°?\s*([NS])?\s*[,;\s]\s*(-?\d+(?:[.,]\d+)?)\s*°?\s*([EW])?\s*$/i);
+  if (!m) return null;
+  let lat = parseFloat(m[1].replace(',', '.')), lon = parseFloat(m[3].replace(',', '.'));
+  if (m[2] && m[2].toUpperCase() === 'S') lat = -Math.abs(lat);
+  if (m[4] && m[4].toUpperCase() === 'W') lon = -Math.abs(lon);
+  return Math.abs(lat) <= 90 && Math.abs(lon) <= 180 ? { lat, lon } : null;
+}
+async function reverseName(lat, lon) {
+  try {
+    const r = await (await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&zoom=10&lat=${lat}&lon=${lon}`, { headers: { 'Accept-Language': lang() } })).json();
+    const a = r.address || {};
+    const town = a.city || a.town || a.village || a.municipality || a.county || a.state || '';
+    return [town, a.country].filter(Boolean).join(', ') || r.display_name || '';
+  } catch (e) { return ''; }
+}
+async function setLocation(lat, lon, { name = '', pan = false, lookupName = true } = {}) {
   lat = Math.max(-89.9, Math.min(89.9, lat)); lon = ((lon + 540) % 360) - 180;
   $('lat').value = lat.toFixed(4); $('lon').value = lon.toFixed(4);
-  marker.setLatLng([lat, lon]);
-  if (pan) map.setView([lat, lon], Math.max(map.getZoom(), 7));
-  try {
-    const tz = await (await fetch(`/api/timezone?lat=${lat}&lon=${lon}`)).json();
-    $('utc').value = tz.utc_offset_h; $('label').value = tz.label; $('label').dataset.summer = tz.summer_label || '';
-    state.tz = tz;
-  } catch (e) { /* offline: keep manual values */ }
-  tzHint(); redrawFigures();
+  state.place = { lat, lon, name };
+  if (marker) { marker.setLatLng([lat, lon]); if (pan) map.setView([lat, lon], Math.max(map.getZoom(), 7)); }
+  $('placeCoords').textContent = `${fmtDeg(lat, 'N', 'S')} · ${fmtDeg(lon, 'E', 'W')}`;
+  $('placeName').textContent = name || t('placeLooking');
+  hints();
+  const tzReq = fetch(`/api/timezone?lat=${lat}&lon=${lon}`).then((r) => r.json()).catch(() => null);
+  const nameReq = !name && lookupName ? reverseName(lat, lon) : Promise.resolve(name);
+  const [tz, found] = await Promise.all([tzReq, nameReq]);
+  if (state.place.lat !== lat || state.place.lon !== lon) return;   // superseded
+  if (tz) { $('utc').value = tz.utc_offset_h; $('label').value = tz.label; $('summer').value = tz.summer_label || ''; state.tz = tz; }
+  state.place.name = found || name || t('placeGeo');
+  $('placeName').textContent = state.place.name;
+  store.set('sundial-place', state.place);
+  hints(); redrawFigures();
 }
-function tzHint() {
-  if (STATIC || !state.tz) return;
-  const tz = state.tz;
-  $('tzHint').textContent = t('tzZone', { tz: tz.tz || '?', off: (tz.utc_offset_h >= 0 ? '+' : '') + tz.utc_offset_h }) + (tz.dst ? t('tzDst') : t('tzNoDst'));
+function zoneWords() {
+  const tz = state.tz; if (!tz) return '';
+  const abbr = tz.abbr || tz.label || `UTC${tz.utc_offset_h >= 0 ? '+' : ''}${tz.utc_offset_h}`;
+  return tz.dst ? t('zoneWords', { abbr, summer: tz.summer_label || '' }) : t('zoneWordsNo', { abbr });
 }
+function hints() {
+  if (STATIC) return;
+  const p = currentParams();
+  $('placeZone').textContent = zoneWords();
+  $('hintTilt').textContent = `${Math.abs(p.lat).toFixed(1)}°`;
+  const ah = $('autoHours').checked ? autoHours(p) : { first: +$('hFirst').value, last: +$('hLast').value };
+  $('hintHours').textContent = t('hHoursV', { a: ah.first, b: ah.last });
+  $('hintSummer').textContent = state.tz ? (state.tz.dst ? t('summerYes', { s: state.tz.summer_label || '' }) : t('summerNo')) : '–';
+  const a = Math.abs(p.lat);
+  const w = a < 27 ? t('warnLow') : a < 35 ? t('warnLowish') : a > 66 ? t('warnPolar') : '';
+  $('placeWarn').textContent = w; $('placeWarn').hidden = !w;
+  $('sizeLine').textContent = t('sizeLine', { mm: $('dia').value, y: $('year').value });
+  $('diaLabel').textContent = t('dia', { mm: $('dia').value });
+  $('diaNote').textContent = t('diaNote', { bed: bedFor(+$('dia').value) });
+}
+const bedFor = (dia) => [180, 220, 250, 300, 350, 400].find((b) => b >= dia * 1.55 + 10) || 400;
 async function search() {
   const q = $('search').value.trim(); if (!q) return;
+  const c = parseCoords(q);
+  if (c) { closeResults(); await setLocation(c.lat, c.lon, { pan: true }); return; }
   $('status').textContent = t('stSearching');
   try {
-    const res = await (await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`, { headers: { 'Accept-Language': lang() } })).json();
+    const res = await (await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(q)}`, { headers: { 'Accept-Language': lang() } })).json();
+    $('status').textContent = '';
     if (!res.length) { $('status').textContent = t('stNothing'); return; }
-    $('status').textContent = res[0].display_name; await setLocation(+res[0].lat, +res[0].lon, true);
+    const ul = $('searchResults'); ul.innerHTML = '';
+    const seen = new Set();
+    for (const r of res) {
+      if (seen.has(r.display_name)) continue; seen.add(r.display_name);
+      const li = document.createElement('li'); li.tabIndex = 0;
+      const parts = r.display_name.split(', ');
+      li.innerHTML = `${parts[0]}<small>${parts.slice(1).join(', ')}</small>`;
+      const pick = () => { closeResults(); $('search').value = parts[0]; setLocation(+r.lat, +r.lon, { name: `${parts[0]}, ${parts[parts.length - 1]}`, pan: true }); };
+      li.addEventListener('click', pick); li.addEventListener('keydown', (e) => { if (e.key === 'Enter') pick(); });
+      ul.appendChild(li);
+    }
+    ul.hidden = false;
   } catch (e) { $('status').textContent = t('stSearchFail'); }
 }
+function closeResults() { $('searchResults').hidden = true; }
+function compactWhere(on) {
+  $('where').hidden = on && !STATIC;
+  $('againBtn').hidden = !on;
+  $('againBtn').textContent = t('anotherPlace');
+}
 
-// ------------------------------------------------------------ generation / static load
-async function generate() {
-  const btn = $('generate'); btn.disabled = true; $('status').textContent = t('stComputing');
-  const body = {
-    lat: +$('lat').value, lon: +$('lon').value, utc_offset_h: +$('utc').value, zone_label: $('label').value, summer_label: $('label').dataset.summer || '',
+// ============================================================ 2 · making
+function requestBody() {
+  return {
+    lat: +$('lat').value, lon: +$('lon').value, utc_offset_h: +$('utc').value, zone_label: $('label').value, summer_label: $('summer').value,
     year: +$('year').value, scale_radius: +$('dia').value / 2, min_roller_radius: +$('minr').value,
     hour_first: $('autoHours').checked ? null : +$('hFirst').value, hour_last: $('autoHours').checked ? null : +$('hLast').value,
+    place_name: state.place?.name || '', tz_name: state.tz?.tz || '',
   };
+}
+function stageList(stages, done, current, ahead) {
+  const ol = $('stages'); ol.innerHTML = '';
+  const items = ahead > 0 ? ['queued', ...stages] : stages;
+  for (const st of items) {
+    const li = document.createElement('li');
+    li.className = done.includes(st) ? 'done' : st === current ? 'doing' : '';
+    li.innerHTML = `<span class="mark"></span><span>${st === 'queued' ? t('stQueued', { n: ahead }) : t(STAGE_KEYS[st])}</span>`;
+    ol.appendChild(li);
+  }
+}
+function startMaking(body) {
+  $('makingPlace').textContent = state.place?.name || `${fmtDeg(body.lat, 'N', 'S')}, ${fmtDeg(body.lon, 'E', 'W')}`;
+  showBeat('making', true); showBeat('today', false); showBeat('home', false);
+  $('failBox').hidden = true; $('barFill').style.width = '0%'; $('stageNote').textContent = '';
+  $('makingFacts').innerHTML = '';
+  $('making').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // facts and figures come from the fast design call while the meshes build
+  const q = new URLSearchParams({ lat: body.lat, lon: body.lon, utc_offset_h: body.utc_offset_h, year: body.year, scale_radius: body.scale_radius, min_roller_radius: body.min_roller_radius });
+  if (body.hour_first != null) { q.set('hour_first', body.hour_first); q.set('hour_last', body.hour_last); }
+  const ah = autoHours(body);
+  makingFacts({ sunrise_earliest: ah.earliest, sunset_latest: ah.latest, hour_first: body.hour_first ?? ah.first, hour_last: body.hour_last ?? ah.last,
+    minute_ticks: body.scale_radius * Math.PI / 720 >= 0.7, tilt_deg: Math.abs(body.lat) }, body);
+  fetch(`/api/design?${q}`).then((r) => r.json()).then((d) => { state.design = d; makingFacts(d, body, true); redrawFigures(); }).catch(() => {});
+  animateAnalemma();
+  const now = zoneNow(body);
+  drawSunPath($('sunPath'), body, now.y, now.mo, now.d, now.mins, { hours: (h) => fmtMins(h * 60) });
+  $('sunPathCap').textContent = t('sunPathCap', { place: state.place?.name || '' });
+  rotateWhy();
+}
+function makingFacts(d, body, full = false) {
+  const rows = [
+    [t('fDay'), t('fDayV', { a: fmtHM(d.sunrise_earliest), b: fmtHM(d.sunset_latest) })],
+    [t('fHours'), t('fHoursV', { a: d.hour_first, b: d.hour_last, t: d.minute_ticks ? t('tick1') : t('tick5') })],
+    [t('fTilt'), `${d.tilt_deg.toFixed(1)}°`],
+    [t('fSummerRow'), body.summer_label ? t('yesLabel', { s: body.summer_label }) : t('noSummerRow')],
+    [t('fRoller'), full ? t('fRollerV', { a: d.roller_r_min.toFixed(1), b: d.roller_r_max.toFixed(1) }) : '…'],
+  ];
+  const dl = $('makingFacts');
+  if (full && dl.children.length === 10) { dl.lastElementChild.textContent = rows[4][1]; dl.lastElementChild.classList.add('in'); return; }
+  dl.innerHTML = '';
+  rows.forEach(([k, v], i) => {
+    const dt = document.createElement('dt'), dd = document.createElement('dd');
+    dt.textContent = k; dd.textContent = v; dt.className = dd.className = 'in'; dt.style.animationDelay = dd.style.animationDelay = `${i * 0.35}s`;
+    dl.append(dt, dd);
+  });
+}
+function animateAnalemma() {
+  const p = currentParams();
+  const labels = { axisEot: t('axisEot'), axisDecl: t('axisDecl'), locale: lang() };
+  $('analemmaCap').textContent = t('ch1cap', { lat: fmtDeg(p.lat, 'N', 'S'), lon: fmtDeg(p.lon, 'E', 'W') });
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) { drawAnalemma($('analemma'), p, labels, 1); return; }
+  const t0 = performance.now(), dur = 2500;
+  const tick = (now) => { const k = Math.min(1, (now - t0) / dur); drawAnalemma($('analemma'), p, labels, k); if (k < 1) requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+}
+function rotateWhy() {
+  clearInterval(state.whyTimer);
+  let i = 0;
+  const show = () => { $('whyCardH').textContent = t(`wc${i + 1}h`); $('whyCardP').textContent = t(`wc${i + 1}p`); i = (i + 1) % 3; };
+  show(); state.whyTimer = setInterval(show, 8000);
+}
+async function generate(bodyOverride) {
+  const btn = $('generate'); btn.disabled = true; $('status').textContent = '';
+  const body = bodyOverride || requestBody();
+  startMaking(body);
   try {
     const r = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
-    const info = await r.json();
-    const loader = new STLLoader();
-    const load = (url) => new Promise((res, rej) => loader.load(url, res, undefined, rej));
-    const [gDial, gR1, gR2, gStand] = await Promise.all([load(info.files.dial), load(info.files.roller_1), load(info.files.roller_2), load(info.files.stand)]);
-    stage.addPart('dial', gDial, info.assembly.dial_to_world);
-    stage.addPart('roller_1', gR1, info.assembly.rollers_to_world.roller_1);
-    stage.addPart('roller_2', gR2, info.assembly.rollers_to_world.roller_2);
-    stage.addPart('stand', gStand, info.assembly.stand_to_world);
-    afterLoad(info);
-    $('downloads').classList.remove('hidden');
-    $('dlZip').href = info.zip; $('dlDial').href = info.files.dial; $('dlR1').href = info.files.roller_1; $('dlR2').href = info.files.roller_2; $('dlStand').href = info.files.stand;
-    $('status').textContent = t('stDone');
-    document.querySelector('.stage').scrollIntoView({ behavior: 'smooth', block: 'center' });
-  } catch (e) { $('status').textContent = t('stError', { e: e.message }); }
+    const start = await r.json();
+    if (start.cached) {
+      stageList(['design', 'dial', 'roller_1', 'roller_2', 'stand', 'export'], ['design', 'dial', 'roller_1', 'roller_2', 'stand', 'export'], null, 0);
+      $('barFill').style.width = '100%'; $('stageNote').textContent = t('stCached');
+      await new Promise((res) => setTimeout(res, 1000));
+      await onResult(start.info);
+    } else {
+      session.set('sundial-job', { id: start.job, body });
+      await followJob(start.job, start.estimates, start.stages, body);
+    }
+  } catch (e) { fail(e.message, body); }
   finally { btn.disabled = false; }
 }
-async function loadStatic() {
-  const info = await (await fetch('info.json')).json();
-  const meshes = await (await fetch('meshes.json')).json();
-  const loader = new GLTFLoader();
-  const toBuffer = (b64) => { const bin = atob(b64); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8.buffer; };
-  const one = (name, rows) => new Promise((res, rej) => loader.parse(toBuffer(meshes[name]), '', (g) => {
-    let geom = null; g.scene.traverse((o) => { if (o.isMesh && !geom) geom = o.geometry; });
-    stage.addPart(name, geom, rows); res();
-  }, rej));
-  const a = info.assembly;
-  await Promise.all([one('dial', a.dial_to_world), one('stand', a.stand_to_world), one('roller_1', a.rollers_to_world.roller_1), one('roller_2', a.rollers_to_world.roller_2)]);
+function followJob(jid, estimates, stages, body) {
+  return new Promise((resolve) => {
+    let view = null, timer = null, es = null, finished = false;
+    const total = stages.reduce((s, st) => s + (estimates[st] || 5), 0);
+    const paint = () => {
+      if (!view) return;
+      const done = view.done_stages || [];
+      stageList(stages, done, view.status === 'queued' ? 'queued' : view.stage, view.ahead);
+      let secs = done.reduce((s, st) => s + (estimates[st] || 5), 0);
+      const cur = view.stage, est = estimates[cur] || 5;
+      const elapsed = view.stage_elapsed + (performance.now() - view.at) / 1000;
+      if (cur) secs += Math.min(est * 0.95, elapsed);
+      const frac = view.status === 'done' ? 1 : Math.min(0.97, secs / total);
+      $('barFill').style.width = `${(frac * 100).toFixed(1)}%`;
+      const left = Math.max(2, Math.round(total - secs));
+      $('stageNote').textContent = view.status === 'queued' ? t('stQueuedNote') : view.status === 'done' ? t('stLoading') : t('toGo', { s: left });
+    };
+    const finish = async (v) => {
+      if (finished) return; finished = true;
+      clearInterval(timer); if (es) es.close();
+      session.set('sundial-job', null);
+      if (v.status === 'done') { view = v; view.at = performance.now(); paint(); await onResult(v.info); }
+      else fail(v.error || 'failed', body);
+      resolve();
+    };
+    const take = (v) => { view = v; view.at = performance.now(); paint(); if (v.status === 'done' || v.status === 'failed') finish(v); };
+    timer = setInterval(paint, 250);
+    if ('EventSource' in window) {
+      es = new EventSource(`/api/jobs/${jid}/events`);
+      es.onmessage = (ev) => take(JSON.parse(ev.data));
+      es.addEventListener('gone', () => finish({ status: 'failed', error: t('stGone') }));
+      es.onerror = () => { es.close(); es = null; poll(); };
+    } else poll();
+    async function poll() {
+      while (!finished) {
+        try { const r = await fetch(`/api/jobs/${jid}`); if (r.status === 404) return finish({ status: 'failed', error: t('stGone') }); take(await r.json()); }
+        catch (e) { /* network blip: keep polling */ }
+        await new Promise((res) => setTimeout(res, 1500));
+      }
+    }
+  });
+}
+function fail(msg, body) {
+  $('failText').textContent = t('stError', { e: msg });
+  $('failBox').hidden = false; $('stageNote').textContent = '';
+  $('retryBtn').onclick = () => generate(body);
+  $('smallerBtn').onclick = () => { $('dia').value = Math.max(80, Math.round(body.scale_radius * 2 * 0.8 / 5) * 5); hints(); generate(); };
+}
+
+// ============================================================ 3 · today
+async function onResult(info) {
+  const loader = new STLLoader();
+  const load = (url) => new Promise((res, rej) => loader.load(url, res, undefined, rej));
+  const [gDial, gR1, gR2, gStand] = await Promise.all([load(info.files.dial), load(info.files.roller_1), load(info.files.roller_2), load(info.files.stand)]);
+  state.geoms = { dial: gDial, roller_1: gR1, roller_2: gR2, stand: gStand };
+  stage.addPart('dial', gDial, info.assembly.dial_to_world);
+  stage.addPart('roller_1', gR1, info.assembly.rollers_to_world.roller_1);
+  stage.addPart('roller_2', gR2, info.assembly.rollers_to_world.roller_2);
+  stage.addPart('stand', gStand, info.assembly.stand_to_world);
+  clearInterval(state.whyTimer);
   afterLoad(info);
+  showBeat('making', false); showBeat('today', true); showBeat('home', true);
+  compactWhere(true);
+  downloads(info);
+  $('today').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 function afterLoad(info) {
   stage.setInfo(info); state.info = info;
   const y = info.params.year;
   $('simDate').min = `${y}-01-01`; $('simDate').max = `${y}-12-31`;
-  if (!$('simDate').value.startsWith(String(y))) $('simDate').value = `${y}-05-20`;
-  fillInfo(); redrawFigures(); sweepIn();
+  $('todayPlace').textContent = info.params.place_name || state.place?.name || `${fmtDeg(info.params.lat, 'N', 'S')}, ${fmtDeg(info.params.lon, 'E', 'W')}`;
+  fillInfo(); accuracyLine(); redrawFigures();
+  goTo('now'); sweepIn();
 }
-
-// ------------------------------------------------------------ time of day
+// choose the moment the viewer shows: now, or the next first light
+function goTo(when) {
+  const info = state.info; if (!info) return;
+  state.when = when;
+  const p = info.params, y = p.year;
+  let m;
+  if (when === 'now' || when === 'tomorrow') {
+    const now = zoneNow(p);
+    const nowInYear = { ...now, y };                      // the dial is engraved for one year: show that year's date
+    m = when === 'now' ? { ...nowInYear, today: true } : nextLightMoment(p, info.design, { ...nowInYear, mins: 1440 });
+    if (when === 'now') { const nl = nextLightMoment(p, info.design, nowInYear); if (!nl.today) { m = nl; state.when = 'tomorrow'; } }
+  } else if (when === 'noon') { const now = zoneNow(p); m = { y, mo: now.mo, d: now.d, mins: 720, today: true }; }
+  state.moment = m;
+  $('simDate').value = `${m.y}-${String(m.mo).padStart(2, '0')}-${String(m.d).padStart(2, '0')}`;
+  $('simTime').value = m.mins;
+  $('todayEyebrow').textContent = t(state.when === 'now' ? 'todayEyebrow' : m.daysAhead > 1 ? 'laterEyebrow' : 'tomorrowEyebrow');
+  update();
+}
 function dateParts() { return $('simDate').value.split('-').map(Number); }
 function update() {
-  const mins = +$('simTime').value, hh = Math.floor(mins / 60), mm = mins % 60;
-  const tt = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  const mins = +$('simTime').value;
+  const tt = fmtMins(mins);
   $('simTimeVal').textContent = tt;
   if (!state.info) return;
   const [y, mo, d] = dateParts();
   const r = stage.setTime(y, mo, d, mins, $('rollerSel').value, $('explode').checked);
-  const dateTxt = new Date(Date.UTC(y, mo - 1, d)).toLocaleDateString(lang(), { day: 'numeric', month: 'long', timeZone: 'UTC' });
+  const p = state.info.params;
+  const dateTxt = fmtDate(y, mo, d);
   const status = !r.up ? t('below') : !r.inRange ? t('outside') : t('inPlace', { n: r.roller === 'roller_1' ? 'I' : 'II' });
   const eot = r.eotMin >= 0 ? t('eotAhead', { x: r.eotMin.toFixed(1) }) : t('eotBehind', { x: (-r.eotMin).toFixed(1) });
-  $('readout').innerHTML = `<span class="big">${tt}</span><span>${dateTxt}</span><span>${t('sunHigh', { x: r.elev.toFixed(0) })}</span><span>${eot}</span><span>${status}${r.wrongRoller ? ', ' + t('wrongRoller') : ''}</span>` +
+  const m = state.moment, atMoment = m && m.mins === mins && m.mo === mo && m.d === d;
+  let lead = '';
+  if (atMoment && state.when === 'now') { const wc = wallClock(p.tz_name); lead = t('readNow') + (wc && wc !== tt ? ` · ${t('clocksShow', { t: wc })}` : ''); }
+  else if (atMoment && state.when === 'tomorrow') lead = (m.daysAhead > 1 ? '' : t('readTomorrow') + ' · ') + t('readFirstLight');
+  for (const b of document.querySelectorAll('#chips .chip')) b.classList.toggle('on', atMoment && b.dataset.when === state.when);
+  $('readout').innerHTML = `<span class="big">${tt}</span>${lead ? `<span>${lead}</span>` : ''}<span>${dateTxt}</span><span>${t('sunHigh', { x: r.elev.toFixed(0) })}</span><span>${eot}</span><span>${status}${r.wrongRoller ? ', ' + t('wrongRoller') : ''}</span>` +
     (r.up && r.inRange ? `<span class="dot"><i></i>${t('legendDot')}</span>` : '');
 }
 function sweepIn() {
@@ -154,43 +340,188 @@ function sweepIn() {
   };
   state.sweep = requestAnimationFrame(tick);
 }
-for (const id of ['simTime', 'simDate', 'rollerSel', 'explode']) $(id).addEventListener('input', update);
-for (const b of document.querySelectorAll('.chip')) b.addEventListener('click', () => {
-  const year = state.info ? state.info.params.year : (STATIC ? 2026 : +$('year').value);
-  $('simDate').value = `${year}-${b.dataset.date}`; $('simTime').value = b.dataset.min; update();
+for (const id of ['simTime', 'simDate', 'rollerSel', 'explode']) $(id).addEventListener('input', () => { if (id !== 'explode' && id !== 'rollerSel') state.moment = null; update(); });
+for (const b of document.querySelectorAll('#chips .chip')) b.addEventListener('click', () => {
+  if (b.dataset.when) { goTo(b.dataset.when); return; }
+  const year = state.info ? state.info.params.year : +$('year').value;
+  state.moment = null; $('simDate').value = `${year}-${b.dataset.date}`; $('simTime').value = b.dataset.min; update();
 });
-
+function accuracyLine() {
+  const info = state.info; if (!info) return;
+  const acc = (info.accuracy || []).map((a) => t('accItemShort', { from: a.from, to: a.to, m: Math.abs(a.max_error_min).toFixed(1) })).join('; ');
+  const sh = (info.shadowed || []).map((x) => t('shItem', { from: x.from, to: x.to, h: x.hours })).join('; ');
+  $('accLine').textContent = (acc ? t('accExc', { x: acc }) : t('accAll')) + (sh ? ' ' + t('shLine', { x: sh }) : '');
+  $('warnings').innerHTML = (info.warnings || []).map((w) => `<li>${w}</li>`).join('');
+}
 function fillInfo() {
   const info = state.info; if (!info) return;
   const d = info.design, p = info.params;
-  const fmt = (h) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`;
   const rows = [
-    [t('fPlace'), `${d.location_text || (p.lat.toFixed(4) + '°, ' + p.lon.toFixed(4) + '°')}, ${p.zone_label || 'UTC' + p.utc_offset_h}`],
+    [t('fPlace'), `${p.place_name || d.location_text || (p.lat.toFixed(4) + '°, ' + p.lon.toFixed(4) + '°')}, ${p.zone_label || 'UTC' + p.utc_offset_h}`],
     [t('fHours'), t('fHoursV', { a: d.hour_first, b: d.hour_last, t: d.minute_ticks ? t('tick1') : t('tick5') })],
-    [t('fDay'), t('fDayV', { a: fmt(d.sunrise_earliest), b: fmt(d.sunset_latest) })],
+    [t('fDay'), t('fDayV', { a: fmtHM(d.sunrise_earliest), b: fmtHM(d.sunset_latest) })],
     [t('fRoller'), t('fRollerV', { a: d.roller_r_min.toFixed(1), b: d.roller_r_max.toFixed(1) })],
     [t('fStand'), t('fStandV', { t: d.tilt_deg.toFixed(1), w: d.plate_bounds ? (d.plate_bounds[2] - d.plate_bounds[0]).toFixed(0) : '?', l: d.plate_bounds ? (d.plate_bounds[3] - d.plate_bounds[1]).toFixed(0) : '?' })],
   ];
   if (info.bounds) rows.push([t('fFoot'), `${(info.bounds.dial[1][0] - info.bounds.dial[0][0]).toFixed(0)} × ${(info.bounds.dial[1][1] - info.bounds.dial[0][1]).toFixed(0)} × ${(info.bounds.dial[1][2] - info.bounds.dial[0][2]).toFixed(0)} mm`]);
-  else rows.push([t('fDish'), t('fDishV', { d: d.dish_depth.toFixed(0) })]);
   const acc = (info.accuracy || []).map((a) => t('accItem', { from: a.from, to: a.to, m: Math.abs(a.max_error_min).toFixed(1), sign: t(a.sign) })).join('; ');
   rows.push([t('fAcc'), acc ? t('fAccExc', { x: acc }) : t('fAccAll')]);
   const sh = (info.shadowed || []).map((x) => t('shItem', { from: x.from, to: x.to, h: x.hours })).join('; ');
   rows.push([t('fShadow'), sh || t('never')]);
+  if (info.stability) rows.push([t('fTip'), t('fTipV', { a: info.stability.tip_angle_deg.toFixed(0) })]);
+  if (d.thread) rows.push([t('fThread'), t('fThreadV', { p: d.thread.pitch.toFixed(1), c: d.thread.clearance.toFixed(1) })]);
   $('infoList').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
-  $('warnings').innerHTML = (info.warnings || []).map((w) => `<li>${w}</li>`).join('');
+}
+function redrawFigures() {
+  const p = currentParams();
+  const labels = { axisEot: t('axisEot'), axisDecl: t('axisDecl'), locale: lang() };
+  const cap = t('ch1cap', { lat: fmtDeg(p.lat, 'N', 'S'), lon: fmtDeg(p.lon, 'E', 'W') });
+  for (const [c, capId] of [['analemma2', 'analemmaCap2'], ['analemma3', 'analemmaCap3']]) { if ($(c).clientWidth) drawAnalemma($(c), p, labels); $(capId).textContent = cap; }
+  const src = state.info || state.design;
+  const words = { empty: t('ch2capEmpty'), scalePlane: t('scalePlane') };
+  const d = state.info ? state.info.design : state.design;
+  const pcap = src ? t('ch2cap', { rmin: d.roller_r_min.toFixed(1), rmax: d.roller_r_max.toFixed(1), len: (d.roller_z_max - d.roller_z_min).toFixed(0) }) : t('ch2capEmpty');
+  for (const [c, capId] of [['profileFig', 'profileCap'], ['profileFig2', 'profileCap2'], ['profileFig3', 'profileCap3']]) { if ($(c).clientWidth) drawProfiles($(c), src ? src.profiles : null, rollerLabels(), words); $(capId).textContent = pcap; }
 }
 
-// ------------------------------------------------------------ start & language changes
+// ============================================================ 4 · home
+const PART_META = { dial: { name: 'partDial', sup: 'supDial', kind: 'dial' }, roller_1: { name: 'partR1', sup: 'supRoller', kind: 'roller' }, roller_2: { name: 'partR2', sup: 'supRoller', kind: 'roller' }, stand: { name: 'partStand', sup: 'supStand', kind: 'stand' } };
+function fileUrl(info, key, name) { return `${info.files[key]}?download_name=${encodeURIComponent(name)}`; }
+async function downloads(info) {
+  if (STATIC) return;
+  const slug = info.zip_name.replace(/\.zip$/, '');
+  $('dlZip').href = `${info.zip}?download_name=${encodeURIComponent(info.zip_name)}`; $('dlZip').download = info.zip_name;
+  const mb = (n) => t('dlZipSub', { mb: n ? (n / 1048576).toFixed(1) : '?' });
+  $('dlZipSub').textContent = mb(info.zip_bytes);
+  if (!info.zip_bytes) fetch(info.zip, { method: 'HEAD' }).then((r) => { $('dlZipSub').textContent = mb(+r.headers.get('content-length')); }).catch(() => {});
+  $('dlNote').textContent = t('dlNote', { bed: info.bed_mm });
+  $('thanks').hidden = true;
+  const box = $('parts'); box.innerHTML = '';
+  for (const key of ['dial', 'roller_1', 'roller_2', 'stand']) {
+    const f = info.parts[key], meta = PART_META[key];
+    const el = document.createElement('div'); el.className = 'part'; el.tabIndex = 0;
+    const [x, y, z] = f.size_mm.map((v) => v.toFixed(0));
+    el.innerHTML = `<canvas data-part="${key}"></canvas><div class="pname">${t(meta.name)}</div><div class="pfacts">${t('pSize', { x, y, z })}<br>${t('pWeight', { v: f.volume_cm3.toFixed(0), g: f.weight_g })}</div><div class="psup">${t(meta.sup)}</div><a href="${fileUrl(info, key, slug + '-' + key)}" download="${slug}-${key}.stl">${t('dlThis')} ↓</a>`;
+    el.querySelector('a').addEventListener('click', (e) => e.stopPropagation());
+    const open = () => openPart(key, info, slug);
+    el.addEventListener('click', open); el.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(); });
+    box.appendChild(el);
+  }
+  state.partsDrawn = false;
+  if ($('partsBox').open) drawParts();
+}
+function drawParts() {
+  if (state.partsDrawn || !state.geoms) return;
+  state.partsDrawn = true;
+  for (const c of document.querySelectorAll('#parts canvas')) renderPartStill(c, state.geoms[c.dataset.part].clone(), PART_META[c.dataset.part].kind);
+}
+$('partsBox').addEventListener('toggle', () => { if ($('partsBox').open) drawParts(); });
+function openPart(key, info, slug) {
+  const dlg = $('partView'), f = info.parts[key], meta = PART_META[key];
+  $('partViewH').textContent = t(meta.name);
+  const [x, y, z] = f.size_mm.map((v) => v.toFixed(0));
+  $('partViewNote').textContent = `${t('pSize', { x, y, z })} · ${t('pWeight', { v: f.volume_cm3.toFixed(0), g: f.weight_g })} · ${t(meta.sup)}`;
+  $('partViewDl').href = fileUrl(info, key, `${slug}-${key}`); $('partViewDl').download = `${slug}-${key}.stl`;
+  dlg.showModal();
+  if (state.partStage) state.partStage();
+  state.partStage = createPartStage($('partCanvas'), state.geoms[key].clone(), meta.kind);
+}
+$('partView').addEventListener('close', () => { if (state.partStage) { state.partStage(); state.partStage = null; } });
+$('dlZip').addEventListener('click', () => { $('thanks').hidden = false; });
+$('shareBtn').addEventListener('click', async () => {
+  const p = state.info ? state.info.params : requestBody();
+  const url = `${location.origin}${location.pathname}#at=${p.lat.toFixed(4)},${p.lon.toFixed(4)},${Math.round(p.scale_radius * 2)},${p.year},${encodeURIComponent(p.place_name || '')}`;
+  try { await navigator.clipboard.writeText(url); $('shareDone').textContent = t('shared'); }
+  catch (e) { $('shareDone').textContent = url; }
+});
+
+// ============================================================ sheets
+function openSettings() { hints(); $('settings').showModal(); }
+$('openSettings').addEventListener('click', openSettings);
+$('openSettings2').addEventListener('click', openSettings);
+$('settings').addEventListener('close', () => { if ($('settings').returnValue === 'regen' || state.regen) { state.regen = false; generate(); } });
+$('regenBtn').addEventListener('click', () => { state.regen = true; });
+$('resetBtn').addEventListener('click', () => {
+  $('dia').value = DEFAULTS.dia; $('year').value = DEFAULTS.year; $('minr').value = DEFAULTS.minr; $('autoHours').checked = true; $('hFirst').disabled = $('hLast').disabled = true;
+  if (state.tz) { $('utc').value = state.tz.utc_offset_h; $('label').value = state.tz.label; $('summer').value = state.tz.summer_label || ''; }
+  hints();
+});
+$('openDetails').addEventListener('click', () => { $('details').showModal(); fillInfo(); redrawFigures(); });
+$('dia').addEventListener('input', hints);
+$('year').addEventListener('change', hints);
+$('autoHours').addEventListener('change', () => { const a = $('autoHours').checked; $('hFirst').disabled = a; $('hLast').disabled = a; hints(); });
+for (const id of ['hFirst', 'hLast']) $(id).addEventListener('change', hints);
+$('lat').addEventListener('change', () => setLocation(+$('lat').value, +$('lon').value, { pan: true }));
+$('lon').addEventListener('change', () => setLocation(+$('lat').value, +$('lon').value, { pan: true }));
+$('utc').addEventListener('change', () => { redrawFigures(); hints(); });
+
+// ============================================================ static preview
+async function loadStatic() {
+  const info = await (await fetch('info.json')).json();
+  const meshes = await (await fetch('meshes.json')).json();
+  const loader = new GLTFLoader();
+  const toBuffer = (b64) => { const bin = atob(b64); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8.buffer; };
+  const one = (name, rows) => new Promise((res, rej) => loader.parse(toBuffer(meshes[name]), '', (g) => {
+    let geom = null; g.scene.traverse((o) => { if (o.isMesh && !geom) geom = o.geometry; });
+    stage.addPart(name, geom, rows); res();
+  }, rej));
+  const a = info.assembly;
+  await Promise.all([one('dial', a.dial_to_world), one('stand', a.stand_to_world), one('roller_1', a.rollers_to_world.roller_1), one('roller_2', a.rollers_to_world.roller_2)]);
+  showBeat('today', true);
+  afterLoad(info);
+}
+
+// ============================================================ start
 function onLanguage() {
-  if (!STATIC) { $('diaLabel').textContent = t('dia', { mm: $('dia').value }); tzHint(); }
-  redrawFigures(); fillInfo(); update();
+  hints(); redrawFigures(); fillInfo(); accuracyLine(); update();
+  if (state.place) { $('placeName').textContent = state.place.name || t('placeGeo'); }
+  if (state.info) { $('todayEyebrow').textContent = t(state.when === 'now' ? 'todayEyebrow' : 'tomorrowEyebrow'); if (!STATIC) downloads(state.info); }
+  compactWhere(!!state.info);
+  if (!STATIC && !$('making').hidden) rotateWhy();
 }
 document.addEventListener('languagechange', onLanguage);
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redrawFigures);
 if (STATIC) {
   loadStatic().catch((e) => { $('readout').innerHTML = `<span class="big">!</span><span>${e.message}</span>`; });
 } else {
-  setLocation(48.7758, 9.1829);
+  $('geoBtn').addEventListener('click', () => {
+    $('status').textContent = t('stLocating');
+    if (!navigator.geolocation) { $('status').textContent = t('stNoGeo'); return; }
+    navigator.geolocation.getCurrentPosition((p) => { $('status').textContent = ''; setLocation(p.coords.latitude, p.coords.longitude, { pan: true }); },
+      () => { $('status').textContent = t('stNoGeo'); }, { timeout: 12000 });
+  });
+  $('searchBtn').addEventListener('click', search);
+  $('search').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); search(); } if (e.key === 'Escape') closeResults(); });
+  document.addEventListener('click', (e) => { if (!e.target.closest('.search-wrap')) closeResults(); });
+  $('mapToggle').addEventListener('click', () => { const b = $('mapBox'); b.hidden = !b.hidden; if (!b.hidden) { initMap(); setTimeout(() => map.invalidateSize(), 50); } });
+  $('generate').addEventListener('click', () => generate());
+  $('againBtn').addEventListener('click', () => { compactWhere(false); $('where').scrollIntoView({ behavior: 'smooth' }); });
+  // where to start: a shared link, a job left running, the last place, or Stuttgart
+  const at = (location.hash.match(/#at=([^&]+)/) || [])[1];
+  const pending = session.get('sundial-job');
+  const last = store.get('sundial-place');
+  (async () => {
+    if (at) {
+      const [lat, lon, dia, year, name] = at.split(',');
+      $('dia').value = +dia || DEFAULTS.dia; $('year').value = +year || DEFAULTS.year;
+      await setLocation(+lat, +lon, { name: decodeURIComponent(name || '') });
+      generate();
+    } else if (pending) {
+      const r = await fetch(`/api/jobs/${pending.id}`).catch(() => null);
+      if (r && r.ok) {
+        const b = pending.body;
+        await setLocation(b.lat, b.lon, { name: b.place_name });
+        $('dia').value = Math.round(b.scale_radius * 2); $('year').value = b.year;
+        startMaking(b);
+        const start = await (await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) })).json();
+        if (start.cached) onResult(start.info); else followJob(start.job, start.estimates, start.stages, b);
+      } else { session.set('sundial-job', null); await setLocation(DEFAULTS.lat, DEFAULTS.lon, { name: 'Stuttgart, Deutschland' }); }
+    } else if (last && Number.isFinite(last.lat)) {
+      await setLocation(last.lat, last.lon, { name: last.name });
+    } else {
+      await setLocation(DEFAULTS.lat, DEFAULTS.lon, { name: 'Stuttgart, Deutschland' });
+    }
+    if (window.matchMedia('(min-width: 900px)').matches) { $('mapBox').hidden = false; initMap(); }
+  })();
 }
 onLanguage();

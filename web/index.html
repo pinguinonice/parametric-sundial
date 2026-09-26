@@ -2,10 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F1ECE2">
 <title>The Sundial That Keeps Clock Time</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Source+Sans+3:wght@400;600&family=Amiri:ital,wght@0,400;0,700;1,400&family=Noto+Naskh+Arabic:wght@400;600&display=swap">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%2713%27 fill=%27none%27 stroke=%27%23B4842A%27 stroke-width=%273%27/%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%274%27 fill=%27%23B4842A%27/%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
 <script type="importmap">
 { "imports": {
@@ -17,34 +19,129 @@
 <body>
 <div class="wrap">
 
-<nav class="topbar"><span class="brand">☉</span><span id="langBox"></span></nav>
+<nav class="topbar"><span class="brand">☉ <span class="brand-name" data-i18n="brand"></span></span><span id="langBox"></span></nav>
 
-<section class="hero">
-  <div class="hero-text">
-    <div class="eyebrow" data-i18n="eyebrow"></div>
+<!-- ============================================================ 1 · where -->
+<section class="beat" id="where">
+  <div class="beat-head">
     <h1 data-i18n="title"></h1>
-    <p class="lede" data-i18n="lede"></p>
+    <p class="lede" data-i18n="promise"></p>
   </div>
-  <div class="stage">
-    <canvas id="c"></canvas>
-  </div>
-  <div class="caption" id="readout"><span class="big">☉</span><span data-i18n="readoutEmpty"></span></div>
-  <div class="controls">
-    <div><label for="simDate" data-i18n="date"></label><input type="date" id="simDate" value="2026-05-20"></div>
-    <div class="span"><label for="simTime" data-i18n="time"></label>
-      <div style="display:flex;align-items:center;gap:14px"><input id="simTime" type="range" min="0" max="1439" step="1" value="720"><span class="time" id="simTimeVal">12:00</span></div></div>
-    <div><label for="rollerSel" data-i18n="roller"></label><select id="rollerSel"><option value="auto" data-i18n="rollerAuto"></option><option value="roller_1" data-i18n="rollerI"></option><option value="roller_2" data-i18n="rollerII"></option></select></div>
-    <div><label class="check"><input id="explode" type="checkbox"> <span data-i18n="apart"></span></label></div>
-    <div class="chip-row">
-      <button class="chip" type="button" data-date="03-20" data-min="720" data-i18n="chip1"></button>
-      <button class="chip" type="button" data-date="06-21" data-min="1170" data-i18n="chip2"></button>
-      <button class="chip" type="button" data-date="11-03" data-min="600" data-i18n="chip3"></button>
-      <button class="chip" type="button" data-date="12-21" data-min="720" data-i18n="chip4"></button>
+  <div class="card place-card">
+    <div class="place-top">
+      <div class="place-name"><span id="placeName" data-i18n="placeUnknown"></span></div>
+      <div class="place-sub" id="placeCoords"></div>
+      <div class="place-sub" id="placeZone"></div>
     </div>
+    <div class="place-actions">
+      <button class="secondary geo" id="geoBtn" type="button"><span class="ico">◎</span><span data-i18n="geo"></span></button>
+      <div class="search-wrap">
+        <div class="row"><input id="search" type="search" autocomplete="off" data-i18n-ph="searchPh"><button class="secondary" id="searchBtn" type="button" data-i18n="search"></button></div>
+        <ul id="searchResults" class="results" hidden></ul>
+      </div>
+      <button class="link" id="mapToggle" type="button" data-i18n="adjustMap"></button>
+      <div id="mapBox" hidden><div id="map"></div></div>
+    </div>
+    <dl class="hints" id="placeHints">
+      <div><dt data-i18n="hTilt"></dt><dd id="hintTilt">–</dd></div>
+      <div><dt data-i18n="hHours"></dt><dd id="hintHours">–</dd></div>
+      <div><dt data-i18n="hSummer"></dt><dd id="hintSummer">–</dd></div>
+    </dl>
+    <p class="hint-warn" id="placeWarn" hidden></p>
+    <p class="quiet-line"><span id="sizeLine"></span> · <button class="link" id="openSettings" type="button" data-i18n="change"></button></p>
+    <p class="status" id="status"></p>
+    <button id="generate" class="primary" type="button" data-i18n="generate"></button>
+  </div>
+  <p class="why-link"><a href="#why" data-i18n="whyLink"></a></p>
+</section>
+
+<!-- ============================================================ 2 · making -->
+<section class="beat" id="making" hidden>
+  <div class="beat-head">
+    <div class="eyebrow" data-i18n="makingEyebrow"></div>
+    <h2 id="makingPlace"></h2>
+  </div>
+  <div class="making-grid">
+    <div class="card">
+      <ol class="stages" id="stages"></ol>
+      <div class="bar"><div class="bar-fill" id="barFill"></div></div>
+      <p class="stage-note" id="stageNote"></p>
+      <div id="failBox" class="fail" hidden>
+        <p id="failText"></p>
+        <div class="row wrap"><button class="secondary" id="retryBtn" type="button" data-i18n="retry"></button><button class="secondary" id="smallerBtn" type="button" data-i18n="trySmaller"></button></div>
+      </div>
+    </div>
+    <div class="card">
+      <dl class="facts" id="makingFacts"></dl>
+    </div>
+    <div class="figure"><canvas id="analemma" width="640" height="560"></canvas><div class="cap" id="analemmaCap"></div></div>
+    <div class="figure"><canvas id="profileFig" width="640" height="420"></canvas><div class="cap" id="profileCap"></div></div>
+    <div class="card sunpath"><canvas id="sunPath" width="640" height="260"></canvas><div class="cap" id="sunPathCap"></div></div>
+    <div class="card why-card" id="whyCard"><div class="eyebrow" data-i18n="whileYouWait"></div><h3 id="whyCardH"></h3><p id="whyCardP"></p><a href="#why" data-i18n="readMore"></a></div>
   </div>
 </section>
 
+<!-- ============================================================ 3 · today -->
+<section class="beat" id="today" hidden>
+  <div class="beat-head">
+    <div class="eyebrow" id="todayEyebrow" data-i18n="todayEyebrow"></div>
+    <h2 id="todayPlace"></h2>
+  </div>
+  <div class="stage">
+    <canvas id="c"></canvas>
+    <div class="stage-tools"><label class="chip toggle"><input id="explode" type="checkbox"> <span data-i18n="apart"></span></label></div>
+  </div>
+  <div class="caption" id="readout"><span class="big">☉</span><span data-i18n="readoutEmpty"></span></div>
+  <div class="chip-row" id="chips">
+    <button class="chip" type="button" data-when="now" data-i18n="chipNow"></button>
+    <button class="chip" type="button" data-when="tomorrow" data-i18n="chipTomorrow"></button>
+    <button class="chip" type="button" data-when="noon" data-i18n="chipNoon"></button>
+    <button class="chip" type="button" data-date="06-21" data-min="720" data-i18n="chipJune"></button>
+    <button class="chip" type="button" data-date="12-21" data-min="720" data-i18n="chipDec"></button>
+  </div>
+  <div class="controls">
+    <div><label for="simDate" data-i18n="date"></label><input type="date" id="simDate" value="2026-05-20"></div>
+    <div class="span"><label for="simTime" data-i18n="time"></label>
+      <div class="slider-row"><input id="simTime" type="range" min="0" max="1439" step="1" value="720"><span class="time" id="simTimeVal">12:00</span></div></div>
+    <div><label for="rollerSel" data-i18n="roller"></label><select id="rollerSel"><option value="auto" data-i18n="rollerAuto"></option><option value="roller_1" data-i18n="rollerI"></option><option value="roller_2" data-i18n="rollerII"></option></select></div>
+  </div>
+  <p class="acc-line" id="accLine"></p>
+  <ul id="warnings" class="warn"></ul>
+  <p class="quiet-line"><button class="link" id="openDetails" type="button" data-i18n="details"></button> · <button class="link" id="openSettings2" type="button" data-i18n="adjust"></button> · <button class="link" id="againBtn" type="button" hidden></button></p>
+</section>
+
+<!-- ============================================================ 4 · home -->
+<section class="beat generator-only" id="home" hidden>
+  <div class="dl-row">
+    <a id="dlZip" class="button main" download><span class="big-label" data-i18n="dlZip"></span><span class="small-label" id="dlZipSub"></span></a>
+    <a id="donate" class="button donate" href="https://paypal.me/pinguinonice/1EUR" target="_blank" rel="noopener"><span class="big-label" data-i18n="donate"></span><span class="small-label" data-i18n="donateSub"></span></a>
+  </div>
+  <p class="note center" id="dlNote"></p>
+  <p class="note center thanks" id="thanks" hidden data-i18n="thanks"></p>
+
+  <details class="disclosure" id="partsBox">
+    <summary data-i18n="previewParts"></summary>
+    <div class="parts" id="parts"></div>
+  </details>
+  <details class="disclosure">
+    <summary data-i18n="printNotes"></summary>
+    <ul class="notes-list"><li data-i18n="pn1"></li><li data-i18n="pn2"></li><li data-i18n="pn3"></li><li data-i18n="pn4"></li><li data-i18n="pn5"></li></ul>
+  </details>
+  <details class="disclosure">
+    <summary data-i18n="ch5h"></summary>
+    <div class="steps">
+      <div class="step"><h3 data-i18n="s1h"></h3><p data-i18n="s1p"></p></div>
+      <div class="step"><h3 data-i18n="s2h"></h3><p data-i18n="s2p"></p></div>
+      <div class="step"><h3 data-i18n="s3h"></h3><p data-i18n="s3p"></p></div>
+      <div class="step"><h3 data-i18n="s4h"></h3><p data-i18n="s4p"></p></div>
+    </div>
+  </details>
+  <p class="quiet-line"><button class="link" id="shareBtn" type="button" data-i18n="share"></button> <span id="shareDone" class="note"></span></p>
+</section>
+
+<!-- ============================================================ why -->
 <section class="chapter" id="why">
+  <div class="eyebrow" data-i18n="whyEyebrow"></div>
   <div class="two">
     <div class="prose">
       <div class="num" data-i18n="ch1n"></div>
@@ -52,13 +149,12 @@
       <p data-i18n="ch1p1"></p>
       <p data-i18n="ch1p2"></p>
     </div>
-    <div class="figure"><canvas id="analemma" width="640" height="560"></canvas><div class="cap" id="analemmaCap"></div></div>
+    <div class="figure"><canvas id="analemma2" width="640" height="560"></canvas><div class="cap" id="analemmaCap2"></div></div>
   </div>
 </section>
-
 <section class="chapter" id="roller">
   <div class="two rev">
-    <div class="figure"><canvas id="profileFig" width="640" height="560"></canvas><div class="cap" id="profileCap"></div></div>
+    <div class="figure"><canvas id="profileFig2" width="640" height="560"></canvas><div class="cap" id="profileCap2"></div></div>
     <div class="prose">
       <div class="num" data-i18n="ch2n"></div>
       <h2 data-i18n="ch2h"></h2>
@@ -68,7 +164,6 @@
     </div>
   </div>
 </section>
-
 <section class="chapter" id="shape">
   <div class="prose">
     <div class="num" data-i18n="ch3n"></div>
@@ -77,69 +172,6 @@
     <p data-i18n="ch3p2"></p>
   </div>
 </section>
-
-<section class="chapter" id="make">
-  <div class="prose">
-    <div class="num" data-i18n="ch4n"></div>
-    <h2 data-i18n="ch4h"></h2>
-    <p data-i18n="ch4p" class="generator-only"></p>
-    <p data-i18n="demoP" class="demo-only"></p>
-  </div>
-  <div class="maker">
-    <div class="generator-only">
-      <div class="row"><input id="search" type="text" data-i18n-ph="searchPh"><button class="secondary" id="searchBtn" type="button" data-i18n="search"></button><button class="secondary" id="geoBtn" type="button" data-i18n-title="geo">◎</button></div>
-      <div id="map"></div>
-      <div class="grid2">
-        <div class="field"><label for="lat" data-i18n="lat"></label><input id="lat" type="number" step="0.0001" min="-89.9" max="89.9" value="48.7758"></div>
-        <div class="field"><label for="lon" data-i18n="lon"></label><input id="lon" type="number" step="0.0001" min="-180" max="180" value="9.1829"></div>
-        <div class="field"><label for="utc" data-i18n="utc"></label><input id="utc" type="number" step="0.25" min="-14" max="14" value="1"></div>
-        <div class="field"><label for="label" data-i18n="label"></label><input id="label" type="text" value="CET  UTC+1" maxlength="18"></div>
-      </div>
-      <p class="note" id="tzHint"></p>
-      <div class="field"><label for="dia" id="diaLabel"></label><input id="dia" type="range" min="80" max="300" step="5" value="150">
-        <p class="note" data-i18n="diaNote"></p></div>
-      <div class="grid2">
-        <div class="field"><label class="check"><input id="autoHours" type="checkbox" checked> <span data-i18n="autoHours"></span></label></div><div></div>
-        <div class="field"><label for="hFirst" data-i18n="hFirst"></label><input id="hFirst" type="number" min="1" max="11" value="5" disabled></div>
-        <div class="field"><label for="hLast" data-i18n="hLast"></label><input id="hLast" type="number" min="13" max="23" value="20" disabled></div>
-        <div class="field"><label for="year" data-i18n="year"></label><input id="year" type="number" min="1900" max="2200" value="2026"></div>
-        <div class="field"><label for="minr" data-i18n="minr"></label><input id="minr" type="number" min="2" max="15" step="0.5" value="4"></div>
-      </div>
-      <button id="generate" class="primary" type="button" data-i18n="generate"></button>
-      <div class="status" id="status"></div>
-    </div>
-    <div>
-      <h3 class="generator-only" data-i18n="whatH"></h3>
-      <h3 class="demo-only" data-i18n="demoH"></h3>
-      <p class="note generator-only" data-i18n="whatP"></p>
-      <div id="downloads" class="downloads hidden generator-only">
-        <a id="dlZip" class="button main" download data-i18n="dlZip"></a>
-        <a id="dlDial" class="button" download data-i18n="dlDial"></a>
-        <a id="dlR1" class="button" download data-i18n="dlR1"></a>
-        <a id="dlR2" class="button" download data-i18n="dlR2"></a>
-        <a id="dlStand" class="button" download data-i18n="dlStand"></a>
-      </div>
-      <dl class="facts" id="infoList"></dl>
-      <ul id="warnings" class="warn"></ul>
-      <p class="support" id="supportBox"><a href="https://paypal.me/pinguinonice/1EUR" target="_blank" rel="noopener" data-i18n="support"></a><span class="note" data-i18n="supportNote"></span></p>
-    </div>
-  </div>
-</section>
-
-<section class="chapter" id="setup">
-  <div class="prose">
-    <div class="num" data-i18n="ch5n"></div>
-    <h2 data-i18n="ch5h"></h2>
-    <p data-i18n="ch5p"></p>
-  </div>
-  <div class="steps">
-    <div class="step"><h3 data-i18n="s1h"></h3><p data-i18n="s1p"></p></div>
-    <div class="step"><h3 data-i18n="s2h"></h3><p data-i18n="s2p"></p></div>
-    <div class="step"><h3 data-i18n="s3h"></h3><p data-i18n="s3p"></p></div>
-    <div class="step"><h3 data-i18n="s4h"></h3><p data-i18n="s4p"></p></div>
-  </div>
-</section>
-
 <section class="chapter" id="limits">
   <div class="prose">
     <div class="num" data-i18n="ch6n"></div>
@@ -150,9 +182,54 @@
     <p data-i18n="lim2"></p>
   </div>
 </section>
-
 <footer data-i18n="footer"></footer>
 </div>
+
+<!-- ============================================================ sheets -->
+<dialog id="settings" class="sheet">
+  <form method="dialog" class="sheet-body">
+    <div class="sheet-head"><h3 data-i18n="settingsH"></h3><button class="link" type="button" id="resetBtn" data-i18n="reset"></button><button class="close" type="submit" aria-label="close">×</button></div>
+    <div class="field"><label for="dia" id="diaLabel"></label><input id="dia" type="range" min="80" max="300" step="5" value="150"><p class="note" id="diaNote"></p></div>
+    <div class="grid2">
+      <div class="field"><label for="year" data-i18n="year"></label><input id="year" type="number" min="1900" max="2200" value="2026"></div>
+      <div class="field"><label for="minr" data-i18n="minr"></label><input id="minr" type="number" min="2" max="15" step="0.5" value="4"></div>
+    </div>
+    <div class="field"><label class="check"><input id="autoHours" type="checkbox" checked> <span data-i18n="autoHours"></span></label></div>
+    <div class="grid2">
+      <div class="field"><label for="hFirst" data-i18n="hFirst"></label><input id="hFirst" type="number" min="1" max="11" value="5" disabled></div>
+      <div class="field"><label for="hLast" data-i18n="hLast"></label><input id="hLast" type="number" min="13" max="23" value="20" disabled></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label for="label" data-i18n="label"></label><input id="label" type="text" value="CET  UTC+1" maxlength="18"></div>
+      <div class="field"><label for="summer" data-i18n="summer"></label><input id="summer" type="text" value="" maxlength="8"></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label for="lat" data-i18n="lat"></label><input id="lat" type="number" step="0.0001" min="-89.9" max="89.9" value="48.7758"></div>
+      <div class="field"><label for="lon" data-i18n="lon"></label><input id="lon" type="number" step="0.0001" min="-180" max="180" value="9.1829"></div>
+    </div>
+    <div class="field"><label for="utc" data-i18n="utc"></label><input id="utc" type="number" step="0.25" min="-14" max="14" value="1"></div>
+    <button class="primary" type="submit" id="regenBtn" data-i18n="regenerate"></button>
+  </form>
+</dialog>
+
+<dialog id="details" class="sheet">
+  <div class="sheet-body">
+    <div class="sheet-head"><h3 data-i18n="detailsH"></h3><form method="dialog"><button class="close" type="submit" aria-label="close">×</button></form></div>
+    <dl class="facts" id="infoList"></dl>
+    <div class="figure"><canvas id="analemma3" width="640" height="560"></canvas><div class="cap" id="analemmaCap3"></div></div>
+    <div class="figure"><canvas id="profileFig3" width="640" height="420"></canvas><div class="cap" id="profileCap3"></div></div>
+  </div>
+</dialog>
+
+<dialog id="partView" class="sheet">
+  <div class="sheet-body">
+    <div class="sheet-head"><h3 id="partViewH"></h3><form method="dialog"><button class="close" type="submit" aria-label="close">×</button></form></div>
+    <canvas id="partCanvas" class="part-canvas"></canvas>
+    <p class="note" id="partViewNote"></p>
+    <a id="partViewDl" class="button" download data-i18n="dlThis"></a>
+  </div>
+</dialog>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script type="module" src="app.js"></script>
 </body>
