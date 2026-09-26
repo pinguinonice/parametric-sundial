@@ -68,7 +68,7 @@ class GenerateRequest(BaseModel):
     hour_first: Optional[int] = Field(None, ge=1, le=11)
     hour_last: Optional[int] = Field(None, ge=13, le=23)
     engrave: bool = True
-    place_name: str = Field("", max_length=120)   # for the zip name and the readme, not engraved
+    place_name: str = Field("", max_length=120, pattern=r"^[^\x00-\x1f<>]*$")   # for the zip name and the readme, not engraved
     tz_name: str = Field("", max_length=64)       # IANA zone, so the viewer can show "now" with summer time
 
 

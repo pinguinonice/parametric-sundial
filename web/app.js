@@ -4,6 +4,7 @@ import { createStage, drawAnalemma, drawProfiles, drawSunPath, sunriseMinutes, s
 import { t, lang, pickLanguage, setLanguage, languageSelector } from './i18n.js';
 
 const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const STATIC = document.documentElement.classList.contains('static');   // hosted preview: no server
 const stage = createStage($('c'));
 window.__sundialStage = stage;   // scripted camera for the visual audit
@@ -141,7 +142,7 @@ async function search() {
       if (seen.has(r.display_name)) continue; seen.add(r.display_name);
       const li = document.createElement('li'); li.tabIndex = 0;
       const parts = r.display_name.split(', ');
-      li.innerHTML = `${parts[0]}<small>${parts.slice(1).join(', ')}</small>`;
+      li.innerHTML = `${esc(parts[0])}<small>${esc(parts.slice(1).join(', '))}</small>`;
       const pick = () => { closeResults(); $('search').value = parts[0]; setLocation(+r.lat, +r.lon, { name: `${parts[0]}, ${parts[parts.length - 1]}`, pan: true }); };
       li.addEventListener('click', pick); li.addEventListener('keydown', (e) => { if (e.key === 'Enter') pick(); });
       ul.appendChild(li);
@@ -446,13 +447,13 @@ function accuracyLine() {
   const acc = (info.accuracy || []).map((a) => t('accItemShort', { from: a.from, to: a.to, m: Math.abs(a.max_error_min).toFixed(1) })).join('; ');
   const sh = (info.shadowed || []).map((x) => t('shItem', { from: x.from, to: x.to, h: x.hours })).join('; ');
   $('accLine').textContent = (acc ? t('accExc', { x: acc }) : t('accAll')) + (sh ? ' ' + t('shLine', { x: sh }) : '');
-  $('warnings').innerHTML = (info.warnings || []).map((w) => `<li>${w}</li>`).join('');
+  $('warnings').innerHTML = (info.warnings || []).map((w) => `<li>${esc(w)}</li>`).join('');
 }
 function fillInfo() {
   const info = state.info; if (!info) return;
   const d = info.design, p = info.params;
   const rows = [
-    [t('fPlace'), `${p.place_name || d.location_text || (p.lat.toFixed(4) + '°, ' + p.lon.toFixed(4) + '°')}, ${p.zone_label || 'UTC' + p.utc_offset_h}`],
+    [t('fPlace'), `${esc(p.place_name || d.location_text || (p.lat.toFixed(4) + '°, ' + p.lon.toFixed(4) + '°'))}, ${esc(p.zone_label || 'UTC' + p.utc_offset_h)}`],
     [t('fHours'), t('fHoursV', { a: d.hour_first, b: d.hour_last, t: d.minute_ticks ? t('tick1') : t('tick5') })],
     [t('fDay'), t('fDayV', { a: fmtHM(d.sunrise_earliest), b: fmtHM(d.sunset_latest) })],
     [t('fRoller'), t('fRollerV', { a: d.roller_r_min.toFixed(1), b: d.roller_r_max.toFixed(1) })],
@@ -542,8 +543,8 @@ async function openHistory() {
     for (const e of [...byPlace.values()].sort((a, b) => b.t - a.t)) {
       const when = new Date(e.t * 1000).toLocaleDateString(lang(), { day: 'numeric', month: 'short' });
       L.circleMarker([e.lat, e.lon], { radius: 5 + Math.min(6, Math.sqrt(e.n) * 2), color: '#B4842A', fillColor: '#B4842A', fillOpacity: 0.55, weight: 1 })
-        .bindPopup(`${e.place || `${e.lat}, ${e.lon}`}<br>${e.n > 1 ? e.n + ' · ' : ''}${e.mm ? e.mm + ' mm · ' : ''}${when}`).addTo(historyMap.dots);
-      const li = document.createElement('li'); li.innerHTML = `<span>${e.place || `${e.lat}°, ${e.lon}°`}${e.n > 1 ? ` ×${e.n}` : ''}</span><span>${when}</span>`; list.appendChild(li);
+        .bindPopup(`${esc(e.place || `${e.lat}, ${e.lon}`)}<br>${e.n > 1 ? e.n + ' · ' : ''}${e.mm ? e.mm + ' mm · ' : ''}${when}`).addTo(historyMap.dots);
+      const li = document.createElement('li'); li.innerHTML = `<span>${esc(e.place || `${e.lat}°, ${e.lon}°`)}${e.n > 1 ? ` ×${e.n}` : ''}</span><span>${when}</span>`; list.appendChild(li);
     }
     const pts = [...byPlace.values()].map((e) => [e.lat, e.lon]);
     setTimeout(() => { historyMap.invalidateSize(); if (pts.length) historyMap.fitBounds(L.latLngBounds(pts).pad(0.6), { maxZoom: 4 }); }, 80);
