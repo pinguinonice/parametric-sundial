@@ -140,7 +140,7 @@ def arc_text_cutters(surf, d, text: str, height: float, rho: float, psi_deg: flo
         if mesh is None:
             continue
         x_c = (pen(text[:i]) + 0.5 * (gb[0] + gb[2])) * scale - total / 2.0   # glyph centre from the string centre
-        dpsi = math.degrees(x_c / rho) * d.omega
+        dpsi = -math.degrees(x_c / rho)     # local x runs counter-clockwise (seen from above the face)
         mesh.apply_transform(surf.local_frame(rho, psi_deg + dpsi))
         cutters.append(mesh)
     return cutters
@@ -650,14 +650,18 @@ class PlateSurface:
         return n / np.linalg.norm(n)
 
     def local_frame(self, rho, psi):
-        """4x4 matrix: local x = clockwise tangent, y = radially outward
-        (projected onto the surface), z = surface normal, at the surface point."""
+        """4x4 matrix at the surface point: z = surface normal, y = radially
+        INWARD (projected onto the surface), x = y cross z.  Lettering laid
+        in this frame has its top towards the hub and reads left to right for
+        someone standing on the pole side of the dial, where its face tilts
+        towards the reader; the hours then run right to left, as on the
+        Stuttgart planetarium dial."""
         pr = math.radians(psi)
         Z = self.normal(rho, psi)
-        e_psi = np.array([math.cos(pr), -math.sin(pr), 0.0]) * self.d.omega
-        X = e_psi - np.dot(e_psi, Z) * Z
-        X /= np.linalg.norm(X)
-        Y = np.cross(Z, X)
+        e_in = -np.array([math.sin(pr), math.cos(pr), 0.0])
+        Y = e_in - np.dot(e_in, Z) * Z
+        Y /= np.linalg.norm(Y)
+        X = np.cross(Y, Z)
         origin = np.array([rho * math.sin(pr), rho * math.cos(pr), float(self.z_top(rho, psi))])
         return _frame_matrix(X, Y, Z, origin)
 
@@ -758,9 +762,9 @@ def sun_blocking_report(d: Design, g: BodyGeometry, surf: "PlateSurface", day_st
     p = d.params
     R = d.R
     t0 = _solar.dt_to_unix(_solar.datetime(p.year, 1, 1, tzinfo=_solar.timezone.utc))
-    r_hub = hub_radius(g, d)
-    z_hub_top = -surf.D0 + HUB_CUP_H
-    z_hub_bot = z_hub_top - HUB_CUP_H - g.hub_len
+    r_hub = max(hub_radius(g, d), bell_radius(g, d))
+    z_hub_top = -surf.D0
+    z_hub_bot = z_hub_top - g.hub_len
     blocked = []
     days = np.arange(0, 365, day_step)
     hours = np.arange(d.hour_first, d.hour_last + 1e-9, hour_step)
@@ -807,6 +811,12 @@ def hub_radius(g: BodyGeometry, d: Design):
     return max(collar_radius(g, d) + 4.0, 12.0)
 
 
+def bell_radius(g: BodyGeometry, d: Design):
+    """Radius where the roller's bell lands on the hub: where the hub's
+    3.5 mm shoulder round begins."""
+    return hub_radius(g, d) + 4.0 - 3.5
+
+
 def hub_top_z(g: BodyGeometry, d: Design):
     return roller_bottom(d) - g.neck_h - g.collar_h
 
@@ -829,21 +839,26 @@ def build_roller(d: Design, g: BodyGeometry, rp: RollerProfile, grooves: int):
     z_collar_bot = z_collar_top - g.collar_h
     z_pin_bot = z_collar_bot - g.pin_len
     prof = [(0.0, z_pin_bot), (g.pin_r, z_pin_bot), (g.pin_r, z_collar_bot)]
-    # the foot: a short seat of radius cr inside the hub's cup, then one
-    # continuous flare (smoothstep) up into the computed profile, so collar,
-    # neck and body are a single curve; the identification grooves are
-    # shallow rounded coves on the flare (one = winter roller, two = summer)
-    seat = HUB_CUP_H
-    z_flare0 = z_collar_bot + seat
-    span = z_lo - z_flare0
-    for z in np.arange(z_collar_bot, z_lo - 1e-9, 0.1):
-        t = min(max((z - z_flare0) / span, 0.0), 1.0)
-        r = cr + (r_lo - cr) * (t * t * (3.0 - 2.0 * t))
+    # the foot: a bell that widens down onto the hub, meeting the hub top
+    # horizontally at the radius where the hub's own round begins, and
+    # leaving it tangent to the computed profile (cubic Hermite); the
+    # identification grooves are shallow rounded coves on the bell
+    r_b = bell_radius(g, d)
+    dz0 = float(rp.z[1] - rp.z[0]); dr0 = float(rp.r[1] - rp.r[0])
+    slope = dr0 / dz0 if abs(dz0) > 1e-9 else 0.0        # dr/dz of the profile at its start
+    L = z_lo - z_collar_bot
+    P0 = np.array([r_b, z_collar_bot]); T0 = np.array([-1.6 * (r_b - r_lo), 0.0])
+    P1 = np.array([r_lo, z_lo]); T1 = np.array([slope * L, L])
+    n_b = max(int(L / 0.1), 20)
+    for t in np.linspace(0.0, 1.0, n_b, endpoint=False):
+        h00 = 2 * t ** 3 - 3 * t ** 2 + 1; h10 = t ** 3 - 2 * t ** 2 + t
+        h01 = -2 * t ** 3 + 3 * t ** 2; h11 = t ** 3 - t ** 2
+        r, z = h00 * P0 + h10 * T0 + h01 * P1 + h11 * T1
         for k in range(grooves):
-            zc = z_flare0 + 1.4 + k * 1.7
+            zc = z_collar_bot + 2.2 + k * 1.8
             u = (z - zc) / 0.6
             if abs(u) < 1.0:
-                r -= 0.45 * 0.5 * (1.0 + math.cos(math.pi * u))
+                r -= 0.4 * 0.5 * (1.0 + math.cos(math.pi * u))
         prof.append((float(r), float(z)))
     prof += [(float(r), float(z)) for r, z in zip(rp.r, rp.z)]
     # rounded cap above the last (solstice) point
@@ -881,15 +896,9 @@ def build_dial(d: Design, g: BodyGeometry, engrave: bool = True):
     f = 3.5   # rounded top edge
     for a in np.linspace(0.0, math.pi / 2, 9)[1:]:
         prof.append(((r_hub + 4.0 - f) + f * math.cos(a), (z_top - f) + f * math.sin(a)))
-    # the top rises around the roller's seat in a concave fillet (a cup of
-    # height HUB_CUP_H), so hub and roller read as one continuous form
-    cr = collar_radius(g, d) + g.clearance + 0.15
-    rho_c = HUB_CUP_H
-    prof.append((cr + rho_c, z_top))
-    for a in np.linspace(0.0, math.pi / 2, 10)[1:]:
-        # quarter circle centred on (cr + rho_c, z_top + rho_c): from the flat top to the seat wall
-        prof.append(((cr + rho_c) - rho_c * math.sin(a), (z_top + rho_c) - rho_c * math.cos(a)))
-    prof += [(cr, z_top), (0.0, z_top)]
+    # the hub's round ends horizontally at the bell's landing radius, so the
+    # roller's bell and the hub's shoulder form one ogee across the seam
+    prof += [(0.0, z_top)]
     hub = _revolve(prof, sections=128)
     body = trimesh.boolean.union([plate, hub], engine="manifold")
 
@@ -966,8 +975,8 @@ def engraving_cutters(d: Design, g: BodyGeometry, surf: PlateSurface):
         std = (d.params.zone_label.split() or [""])[0]
         psi_lab = float(d.psi_of_time(12.5))
         if std:
-            cutters += arc_text_cutters(surf, d, std, small * 0.9, rho_txt, psi_lab, depth)
-        cutters += arc_text_cutters(surf, d, summer, small * 0.9, rho_s, psi_lab, depth)
+            cutters += arc_text_cutters(surf, d, std, small * 0.7, rho_txt, psi_lab, depth)
+        cutters += arc_text_cutters(surf, d, summer, small * 0.7, rho_s, psi_lab, depth)
         rho_l = rho_s - h_s / 2.0 - 2.5 - small / 2.0
         lines = [ln for ln in [d.params.zone_label, location_text(d.params.lat, d.params.lon)] if ln]
     else:
@@ -1013,7 +1022,6 @@ def _tube(path, radii, sections=48):
     return m
 
 
-HUB_CUP_H = 2.0              # the hub top rises this far around the roller's seat
 MONOTONE_TWIST = True
 RELAX_BAND_DEG = 2.0
 CLOSE_BAND_DEG = 3.0
@@ -1194,7 +1202,7 @@ def build_stand(d: Design, g: BodyGeometry, loads=None):
     TIP_ANGLE_REQ_DEG in any direction before it tips over."""
     import shapely
     from shapely.geometry import LineString, Polygon as _Poly, Point as _Pt
-    from shapely.affinity import translate as _stranslate
+    from shapely.affinity import translate as _stranslate, rotate as _srotate
     phi, a, top, centre, h_v = _stand_layout(d, g)
     up_side = np.array([0.0, -math.sin(phi), math.cos(phi)])  # = -y_dial
     loads = list(loads or [])
@@ -1361,7 +1369,7 @@ def build_stand(d: Design, g: BodyGeometry, loads=None):
         engrave(tick.difference(foot))
         cx, cy = pnt + nrm * 6.2
         for poly in _text_polygons(letters[m_i], 3.8):
-            gl = _stranslate(poly, cx, cy)
+            gl = _stranslate(_srotate(poly, 180.0, origin=(0, 0)), cx, cy)   # upright for the reader on the pole side
             if inner.contains(gl) and not foot.intersects(gl):
                 engrave(gl)
     engrave(groove)
@@ -1378,7 +1386,7 @@ def build_stand(d: Design, g: BodyGeometry, loads=None):
         seg_pts = rc[sel]
         if len(seg_pts) < 4:
             continue
-        seg_pts = seg_pts[np.argsort(seg_pts[:, 1] * side)]     # right side reads towards the pole, left side back
+        seg_pts = seg_pts[np.argsort(-seg_pts[:, 1] * side)]    # read from the pole side: the reader's right flank runs away from them
         pth = LineString(seg_pts)
         for h_try in (h, 0.85 * h, 0.7 * h):
             glyphs, total = flat_path_glyphs(text, h_try, pth, pth.length / 2.0)

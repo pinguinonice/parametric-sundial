@@ -93,12 +93,13 @@ shadow edge lands on the right minute and that the dial body does not shadow its
 ## Printing
 
 * `dial.stl` scale side up, tree supports under the wings and hub; 0.15–0.2 mm layers.
-* `roller_1.stl`, `roller_2.stl` pin down with a brim.
+* `roller_1.stl`, `roller_2.stl` pin down, with supports under the bell.
 * `stand.stl` plate down; the stem's bend needs no supports above about 25° latitude, tree supports under it otherwise.
 
 Level the plate, point its long axis to true north (south on the southern hemisphere), drop the dial on
-the keyed pin, screw in the roller for the current half year until its collar seats, and read at
-the leading shadow edge.
+the keyed pin, screw in the roller for the current half year until its bell seats, and read at
+the leading shadow edge. The dial is read from the pole side, where its face tilts towards you;
+the numerals have their tops towards the hub and the hours run from right to left.
 
 ## References
 

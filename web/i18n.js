@@ -41,7 +41,7 @@ S.en = {
   ch5p: 'Print the dial scale side up with tree supports under the wings, the rollers pin down with a brim, and the stand base down. Then, in this order:',
   s1h: 'Level the base', s1p: 'A bubble level on the disc, a shim under the low edge. One degree of tilt is four minutes of error at noon.',
   s2h: 'Aim the plate at true north', s2p: 'Not magnetic north: correct your compass by the local declination, or use the shadow of a plumb line at local solar noon.',
-  s3h: 'Seat the dial', s3p: 'The pin has a flat, the hub a matching socket. It goes on one way only, noon mark towards the pole.',
+  s3h: 'Seat the dial', s3p: 'The pin has a flat, the hub a matching socket. It goes on one way only, noon mark towards the pole. You read the dial from the pole side, where its face tilts towards you like a book stand.',
   s4h: 'Choose the roller', s4p: 'One groove from 21 December to 21 June, two grooves for the rest of the year. Screw it into the hub until the collar seats; the coarse thread needs no force. Read at the leading edge of the shadow and add an hour in summer time.',
   ch6n: 'Six', ch6h: 'Where it is honest',
   lim1: '<strong>Near the solstices.</strong> For about three weeks in December and two in June the correction keeps changing while the sun’s height stands still, and no roller can be tangent to every ray. The error is shared between neighbouring days and stays within about two and a half minutes in winter, one in summer. Every other day reads to well within a minute. Bernhardt’s own dials have the same limit.',

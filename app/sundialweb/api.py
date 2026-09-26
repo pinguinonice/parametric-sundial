@@ -26,7 +26,7 @@ WEB_DIR = Path(__file__).resolve().parent.parent.parent / "web"
 CACHE_DIR = Path(os.environ.get("SUNDIAL_CACHE", os.path.join(tempfile.gettempdir(), "sundial-web")))
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-CACHE_VERSION = "10"  # bump when the geometry changes so cached results are rebuilt
+CACHE_VERSION = "11"  # bump when the geometry changes so cached results are rebuilt
 
 app = FastAPI(title="Bernhardt sundial generator", version="1.0")
 
@@ -254,11 +254,12 @@ Parts
 Assembly
   Put the dial on the stand pin (the flat on the pin keys the orientation).
   Level the plate, point its long axis exactly towards {pole} (true, not magnetic).
-  Screw in the roller for the current half year until its collar seats on the hub: the
+  Screw in the roller for the current half year until its bell seats on the hub: the
   thread is a coarse rounded one ({thr['pitch']:.1f} mm pitch, {thr['clearance']:.1f} mm clearance)
   that prints without calibration; the collar, not the thread, sets the height.
-  Read the time at the LEADING edge of the roller's shadow on the outer ring, where it
-  crosses the tick ends.
+  Stand on the {pole} side, where the dial's face tilts towards you: the numerals have their
+  tops towards the hub and the hours run from right to left. Read the time at the LEADING
+  edge of the roller's shadow on the outer ring, where it crosses the tick ends.
 {summer_note}
   Swap the roller at each solstice.
 

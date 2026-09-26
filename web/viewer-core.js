@@ -115,7 +115,8 @@ export function createStage(canvas) {
     info = i;
     const c = i.assembly.dial_centre_enu, R = i.design.outer_radius;
     controls.target.set(c[0], c[1], c[2] - 6);
-    camera.position.set(c[0] + 2.1 * R, c[1] - 3.0 * R, c[2] + 1.6 * R);
+    const pole = (i.params && i.params.lat < 0) ? -1 : 1;   // the dial is read from the pole side, where its face tilts towards you
+    camera.position.set(c[0] + 2.1 * R, c[1] + pole * 3.0 * R, c[2] + 1.6 * R);
     dot.visible = true;
   }
   function rollerForDate(mo, d) {
