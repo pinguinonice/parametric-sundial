@@ -1,9 +1,7 @@
 # Website stories
 
-Status: the four-beat flow is built on the branch (S1.1 to S1.4, S2.1 to
-S2.3, S3.1 to S3.3, S4.1 to S4.4, S5.1 to S5.3, B1, B2). Open: S3.4 touch
-polish, README text from the same source as the print notes (S4.4, second
-bullet), the settings sheet on desktop as a side panel.
+Status: everything below is built on the branch (S1.1 to S5.3, B1 to B12).
+Open: nothing from this list; new ideas go into the backlog below first.
 
 Plan for turning the page into a mobile-first flow with four beats:
 **Where am I**, **Making it**, **Your dial today**, **Take it home**. Written as
@@ -369,6 +367,14 @@ Ideas from Philipp, to be worked in gradually with a commit per step:
   CDNs preconnected; Leaflet and the Arabic fonts load only when a map or
   Arabic is opened; the stage shows a soft breathing sun dot until the
   meshes arrive. Nothing else spins or flashes.
+
+* **B12 · Housekeeping that showed up while judging screenshots.** *Done:*
+  the import map precedes the module preloads (a reload broke without it),
+  first light means the sun five degrees up so the frame is lit, a vertical
+  swipe on the viewer still scrolls the page, the hour hint uses the
+  generator's own clamp, the dial cache is pruned by size, user-supplied
+  text is escaped, and a fresh server's opening dial is retried while the
+  warm-up build runs.
 
 ## Order of work
 
