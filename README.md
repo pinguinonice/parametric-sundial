@@ -45,15 +45,45 @@ the cache is wiped on restart, which is fine.
 
 ## What the site does
 
-1. Pick a location on the map or type coordinates. The standard-time UTC offset of the local
-   zone is looked up automatically (no daylight-saving shift: the dial shows standard time and
-   carries an engraved note to add one hour in summer).
-2. Choose the reading-circle diameter (default 150 mm; the shape is scale-free, only the 8 mm
-   plugs and the minimum roller neck stay fixed). The hour range is derived from the earliest
-   sunrise and latest sunset at the location.
-3. Generate. A Three.js preview shows the assembled dial with a real sun position for any date and
-   time of the year, with shadows, so you can watch the leading edge of the roller shadow land on
-   the red expected-reading dot. Download the parts individually or as a zip with a README.
+The page is a four-beat flow, mobile first:
+
+1. **Where am I.** The opening shows the last dial anyone made, with the sun looping through
+   its day, beside a place card: use my location, search a town (or type coordinates), adjust
+   on a map. The card shows the tilt, the engraved hour range and whether the zone keeps summer
+   time before anything is built. One button: *Make my sundial*.
+2. **Making it.** The facts of the dial appear at once (longest day, hours, roller waist, tilt),
+   the analemma draws itself, and six named stages tick off as the server builds (design, dial,
+   roller I, roller II, base, packing) with an estimate from the last builds. A repeat request
+   comes from the cache. A closed tab can be reopened within ten minutes and picks the job up.
+3. **Your dial today.** The viewer opens at the place's current standard time with the right
+   roller fitted, or, when the sun is down or outside the engraved hours, at tomorrow's first
+   light on the dial. The page's own shadows follow the sun of the moment shown.
+4. **Take it home.** One ZIP button (size and bed hint), a *Buy us a coffee* button beside it
+   that explains the server cost and never gates anything, part previews on a build plate with
+   size, volume, weight and support hints, print notes, setup steps and a share link.
+
+Settings (diameter, year, hour range, roller neck, labels, manual coordinates) and the full
+numbers live one tap away in side sheets. A quiet *Dial map* in the top bar shows where dials
+have been made (one entry per session per minute, coordinates to a tenth of a degree). Seven
+languages, right-to-left included; the stories behind the design are in `docs/web-stories.md`.
+
+### API
+
+| Route | What it does |
+|---|---|
+| `GET /api/timezone?lat&lon` | standard offset, zone name, summer-time label |
+| `GET /api/design?lat&lon&utc_offset_h&year&scale_radius…` | the dial's facts without meshing (a few seconds, cached) |
+| `POST /api/generate` | `{cached: true, info}` at once, or `{job, estimates, stages}`; header `X-Sundial-Session` for the map |
+| `GET /api/jobs/{id}` and `/events` | job status; server-sent events with the current stage |
+| `GET /api/files/{key}/{name}` | `dial.stl`, `roller_1.stl`, `roller_2.stl`, `stand.stl`, `sundial.zip`, `viewer.glb` (decimated, for the browser) |
+| `GET /api/latest` | the last dial made, for the opening picture |
+| `GET /api/history` | where dials have been made, for the map |
+| `GET /api/notes?lang` | print notes and setup steps from the site's strings (also used in the zip README) |
+
+One worker thread builds dials in order. `SUNDIAL_MAX_QUEUE` (default 12) caps the queue,
+`SUNDIAL_MAX_PER_CLIENT` (default 2) the pending dials per address. A fresh server builds a
+Stuttgart dial at startup so the opening is never empty (`SUNDIAL_NO_WARMUP=1` disables it).
+Every creation is logged to `creations.jsonl` in the cache dir with hashed session and client.
 
 ## How the geometry is computed (`app/sundialweb`)
 

@@ -17,7 +17,7 @@ app = re.sub(r"^import .*?from '\./.*?';\n", "", app, flags=re.M)     # local im
 app = app.replace("import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';\n", "")
 app = app.replace("import { STLLoader } from 'three/addons/loaders/STLLoader.js';\n", "")
 
-body = html[html.index("<body>") + len("<body>"):html.index("<script src=")]
+body = html[html.index("<body>") + len("<body>"):html.index("<script type=\"module\" src=\"app.js\">")]
 importmap = re.search(r"<script type=\"importmap\">.*?</script>", html, re.S).group(0)
 fonts = re.search(r'<link rel="stylesheet" href="https://fonts\.googleapis\.com[^>]*>', html).group(0)
 demo_body = body.replace('data-i18n="eyebrow"', 'data-i18n="demoEyebrow"').replace('data-i18n="lede"', 'data-i18n="demoLede"')

@@ -104,6 +104,7 @@ export function createStage(canvas) {
   camera.up.set(0, 0, 1);
   const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.49; controls.minDistance = 120; controls.maxDistance = 900;
+  canvas.style.touchAction = 'pan-y';   // a vertical swipe still scrolls the page past the viewer; a sideways drag orbits
   scene.add(new THREE.HemisphereLight(0xfff8ee, 0x9a9184, 0.75));   // sky and a warm ground bounce so undersides read
   const sun = new THREE.DirectionalLight(0xfff1d6, 2.6);
   sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);

@@ -60,7 +60,7 @@
     </dl>
     <p class="hint-warn" id="placeWarn" hidden></p>
     <p class="quiet-line"><span id="sizeLine"></span> · <button class="link" id="openSettings" type="button" data-i18n="change"></button></p>
-    <p class="status" id="status"></p>
+    <p class="status" id="status" role="status" aria-live="polite"></p>
     <button id="generate" class="primary" type="button" data-i18n="generate"></button>
   </div>
   </div>
@@ -77,7 +77,7 @@
     <div class="card">
       <ol class="stages" id="stages"></ol>
       <div class="bar"><div class="bar-fill" id="barFill"></div></div>
-      <p class="stage-note" id="stageNote"></p>
+      <p class="stage-note" id="stageNote" role="status" aria-live="polite"></p>
       <div id="failBox" class="fail" hidden>
         <p id="failText"></p>
         <div class="row wrap"><button class="secondary" id="retryBtn" type="button" data-i18n="retry"></button><button class="secondary" id="smallerBtn" type="button" data-i18n="trySmaller"></button></div>
@@ -100,11 +100,11 @@
     <h2 id="todayPlace"></h2>
   </div>
   <div class="stage loading" id="stage">
-    <canvas id="c"></canvas>
+    <canvas id="c" aria-label="3D view of the sundial"></canvas>
     <div class="stage-wait" aria-hidden="true"><span></span></div>
     <div class="stage-tools"><label class="chip toggle"><input id="explode" type="checkbox"> <span data-i18n="apart"></span></label></div>
   </div>
-  <div class="caption" id="readout"><span class="big">☉</span><span data-i18n="readoutEmpty"></span></div>
+  <div class="caption" id="readout" aria-live="polite"><span class="big">☉</span><span data-i18n="readoutEmpty"></span></div>
   <div class="chip-row" id="chips">
     <button class="chip" type="button" data-when="now" data-i18n="chipNow"></button>
     <button class="chip" type="button" data-when="tomorrow" data-i18n="chipTomorrow"></button>

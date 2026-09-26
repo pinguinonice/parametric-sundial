@@ -130,7 +130,7 @@ button.secondary:hover,.button:hover{border-color:var(--brass);color:var(--ink)}
 
 /* 3 · today */
 .stage{position:relative;border-radius:18px;overflow:hidden;border:1px solid var(--line);background:linear-gradient(var(--sky-1),var(--sky-2));box-shadow:calc(var(--sx)*1.6) calc(var(--sy)*1.6) calc(var(--sblur)*1.4) -22px rgba(var(--shadow-rgb),calc(var(--salpha)*1.4));transition:box-shadow .35s ease}
-.stage canvas{display:block;width:100%;height:auto;aspect-ratio:4/5;max-width:100%;touch-action:none}
+.stage canvas{display:block;width:100%;height:auto;aspect-ratio:4/5;max-width:100%;touch-action:pan-y}
 @media (min-width:700px){.stage canvas{aspect-ratio:16/9}}
 .stage-tools{position:absolute;top:10px;inset-inline-end:10px}
 .stage-wait{position:absolute;inset:0;display:none;align-items:center;justify-content:center;pointer-events:none}
