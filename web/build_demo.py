@@ -24,6 +24,7 @@ demo_body = body.replace('data-i18n="eyebrow"', 'data-i18n="demoEyebrow"').repla
 # the hosted preview has no files to offer: drop the download links entirely
 demo_body = re.sub(r'<div id="downloads".*?</div>\n', '', demo_body, flags=re.S)
 page = f"""<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>The Sundial That Keeps Clock Time</title>
 {fonts}
 <style>

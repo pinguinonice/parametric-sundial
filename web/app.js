@@ -119,7 +119,7 @@ async function search() {
 function closeResults() { $('searchResults').hidden = true; }
 function compactWhere(on) {
   $('where').hidden = on && !STATIC;
-  $('againBtn').hidden = !on;
+  $('againWrap').hidden = !on;
   $('againBtn').textContent = t('anotherPlace');
 }
 
