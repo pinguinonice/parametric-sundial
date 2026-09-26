@@ -218,6 +218,8 @@ def test_api_generate(tmp_path, monkeypatch):
     assert info["zip_name"] == "sundial-stuttgart-germany-100mm.zip"
     assert set(info["parts"]) == {"dial", "roller_1", "roller_2", "stand"} and info["parts"]["dial"]["weight_g"] > 0
     assert info["bed_mm"] in (180, 220, 250, 300, 350, 400)
+    n = client.get("/api/notes", params={"lang": "de"}).json()
+    assert len(n["print"]) == 5 and len(n["steps"]) == 4 and "Zifferblatt" in n["print"][1]
     g = client.get(info["files"]["glb"])
     assert g.status_code == 200 and g.content[:4] == b"glTF" and len(g.content) < 4_000_000
     r = client.post("/api/generate", json=body)   # second time: cached, no job

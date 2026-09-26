@@ -123,7 +123,7 @@ function hints() {
   $('placeWarn').textContent = w; $('placeWarn').hidden = !w;
   $('sizeLine').textContent = t('sizeLine', { mm: $('dia').value, y: $('year').value });
   $('diaLabel').textContent = t('dia', { mm: $('dia').value });
-  $('diaNote').textContent = t('diaNote', { bed: bedFor(+$('dia').value) });
+  $('diaNote').textContent = t('diaNote', { mm: $('dia').value, bed: bedFor(+$('dia').value) });
 }
 const bedFor = (dia) => [180, 220, 250, 300, 350, 400].find((b) => b >= dia * 1.55 + 10) || 400;
 async function search() {

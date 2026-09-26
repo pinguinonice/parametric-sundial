@@ -338,6 +338,29 @@ def generate(req: GenerateRequest, progress=None):
     return info
 
 
+def site_notes(lang: str = "en") -> dict:
+    """Print notes and setup steps from the site's own strings (web/i18n.js),
+    so the README and the page never drift apart."""
+    out = {"print": [], "steps": []}
+    try:
+        src = (WEB_DIR / "i18n.js").read_text()
+        m = re.search(r"^S\.%s = \{\n(.*?)\n\};" % re.escape(lang), src, re.S | re.M)
+        block = m.group(1) if m else ""
+        def get(key):
+            mm = re.search(r"(?<![A-Za-z0-9_])%s: '((?:[^'\\]|\\.)*)'" % key, block)
+            return mm.group(1).replace("\\'", "'") if mm else ""
+        out["print"] = [get(f"pn{i}") for i in range(1, 6) if get(f"pn{i}")]
+        out["steps"] = [(get(f"s{i}h"), get(f"s{i}p")) for i in range(1, 5) if get(f"s{i}h")]
+    except Exception:
+        pass
+    return out
+
+
+@app.get("/api/notes")
+def api_notes(lang: str = "en"):
+    return site_notes(lang if re.fullmatch(r"[a-z]{2}", lang or "") else "en")
+
+
 def _readme(info):
     d = info["design"]; p = info["params"]
     acc = "\n".join(f"    {a['from']} - {a['to']}: up to {abs(a['max_error_min']):.1f} min {a['sign']}"
@@ -349,6 +372,7 @@ def _readme(info):
     summer_note = (f"  The outer row of numerals is standard time ({zone}); the inner row is summer\n  time ({p['summer_label']})."
                    if p.get("summer_label") else "  The scale shows standard time; this zone keeps no summer time.")
     pole = "north" if p["lat"] >= 0 else "south"
+    notes = site_notes("en")
     place = (p.get("place_name") or "").strip()
     return f"""Bernhardt precision sundial, generated for
   {place + chr(10) + "  " if place else ""}latitude {p['lat']:.4f}, longitude {p['lon']:.4f}, zone {zone}
@@ -365,6 +389,12 @@ Parts
                 {pw:.0f} x {pl:.0f} mm and sized so the assembled dial can be tilted
                 {stab['required_tip_angle_deg']:.0f} degrees before it tips (this one: {stab['tip_angle_deg']:.0f} degrees,
                 {stab['margin_mm']:.0f} mm of footprint beyond the centre of mass).
+
+Printing
+{chr(10).join("  " + n for n in notes["print"])}
+
+Setting it up
+{chr(10).join(f"  {i + 1}. {h}: {t}" for i, (h, t) in enumerate(notes["steps"]))}
 
 Assembly
   Put the dial on the stand pin (the flat on the pin keys the orientation).

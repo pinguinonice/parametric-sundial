@@ -114,7 +114,7 @@ export function createStage(canvas) {
   // ground: a stone disc with a soft radial gradient, receives the shadow
   const gc = document.createElement('canvas'); gc.width = gc.height = 512;
   const gx = gc.getContext('2d'); const grad = gx.createRadialGradient(256, 256, 40, 256, 256, 256);
-  grad.addColorStop(0, '#a8a093'); grad.addColorStop(0.7, '#968e81'); grad.addColorStop(1, '#847c70');
+  grad.addColorStop(0, '#8e8679'); grad.addColorStop(0.7, '#7d7569'); grad.addColorStop(1, '#6b6459');
   gx.fillStyle = grad; gx.fillRect(0, 0, 512, 512);
   const gtex = new THREE.CanvasTexture(gc); gtex.colorSpace = THREE.SRGBColorSpace;
   const ground = new THREE.Mesh(new THREE.CircleGeometry(520, 96), new THREE.MeshStandardMaterial({ map: gtex, roughness: 0.95, metalness: 0 }));
