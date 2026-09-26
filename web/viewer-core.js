@@ -85,8 +85,9 @@ export function autoHours(params) {
     earliest = Math.min(earliest, tNoon - H0 / 15); latest = Math.max(latest, tNoon + H0 / 15); any = true;
   }
   if (!any) return { first: 6, last: 18, earliest: 6, latest: 18 };
-  const first = Math.max(1, Math.min(Math.floor(earliest), 11)), last = Math.max(13, Math.min(Math.ceil(latest), 23));
-  return { first: Math.abs(params.lat) > 66 ? Math.max(3, first) : first, last: Math.abs(params.lat) > 66 ? Math.min(21, last) : last, earliest, latest };
+  // same clamps as design._auto_hours: never before 3 or after 21, then the engraving limits
+  const first = Math.max(1, Math.min(Math.max(Math.floor(earliest), 3), 11)), last = Math.max(13, Math.min(Math.min(Math.ceil(latest), 21), 23));
+  return { first, last, earliest, latest };
 }
 export const M4 = (rows) => new THREE.Matrix4().set(...rows.flat());
 export const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
