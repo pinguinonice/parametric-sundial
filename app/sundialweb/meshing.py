@@ -1405,13 +1405,20 @@ def build_stand(d: Design, g: BodyGeometry, loads=None):
     return stand, info
 
 
-def build_all(d: Design, g: BodyGeometry | None = None, engrave: bool = True):
+def build_all(d: Design, g: BodyGeometry | None = None, engrave: bool = True, progress=None):
+    """All four parts.  ``progress(stage)`` is called before each stage
+    ("dial", "roller_1", "roller_2", "stand") so a UI can show what is
+    being made."""
     g = g or BodyGeometry.for_radius(d.R)
+    tell = progress or (lambda stage: None)
+    tell("dial")
     dial, dial_info = build_dial(d, g, engrave=engrave)
     rollers = []
     for k, rp in enumerate(d.rollers):
+        tell(rp.name)
         m, inf = build_roller(d, g, rp, grooves=k + 1)
         rollers.append((rp.name, m, inf))
+    tell("stand")
     stand, stand_info = build_stand(d, g, loads=load_masses(d, g, dial, rollers, dial_info))
     return {"dial": dial, "rollers": rollers, "stand": stand,
             "geometry": g, "dial_info": dial_info, "stand_info": stand_info}

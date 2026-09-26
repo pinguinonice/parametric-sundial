@@ -197,10 +197,28 @@ def test_api_generate(tmp_path, monkeypatch):
     client = TestClient(api.app)
     r = client.get("/api/timezone", params={"lat": 48.7758, "lon": 9.1829})
     assert r.status_code == 200 and r.json()["utc_offset_h"] == 1.0
-    r = client.post("/api/generate", json={"lat": 48.7758, "lon": 9.1829, "utc_offset_h": 1.0,
-                                           "zone_label": "CET  UTC+1", "scale_radius": 50.0, "year": 2026})
+    r = client.get("/api/design", params={"lat": 48.7758, "lon": 9.1829, "utc_offset_h": 1.0, "year": 2026, "scale_radius": 50.0})
+    assert r.status_code == 200 and r.json()["hour_first"] <= 5 and r.json()["hour_last"] >= 20
+    body = {"lat": 48.7758, "lon": 9.1829, "utc_offset_h": 1.0, "zone_label": "CET  UTC+1", "scale_radius": 50.0,
+            "year": 2026, "place_name": "Stuttgart, Germany", "tz_name": "Europe/Berlin"}
+    r = client.post("/api/generate", json=body)
     assert r.status_code == 200, r.text
-    info = r.json()
+    start = r.json()
+    assert start["cached"] is False and start["job"]
+    import time as _time
+    for _ in range(600):
+        j = client.get(f"/api/jobs/{start['job']}").json()
+        if j["status"] in ("done", "failed"):
+            break
+        _time.sleep(0.5)
+    assert j["status"] == "done", j.get("error")
+    assert j["done_stages"] == list(api.STAGES)
+    info = j["info"]
+    assert info["zip_name"] == "sundial-stuttgart-germany-100mm.zip"
+    assert set(info["parts"]) == {"dial", "roller_1", "roller_2", "stand"} and info["parts"]["dial"]["weight_g"] > 0
+    assert info["bed_mm"] in (180, 220, 250, 300, 350, 400)
+    r = client.post("/api/generate", json=body)   # second time: cached, no job
+    assert r.json()["cached"] is True and r.json()["info"]["id"] == info["id"]
     for url in list(info["files"].values()) + [info["zip"]]:
         f = client.get(url)
         assert f.status_code == 200 and len(f.content) > 1000

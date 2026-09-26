@@ -6,7 +6,13 @@ import io
 import json
 import math
 import os
+import queue
+import re
+import statistics
 import tempfile
+import threading
+import time
+import uuid
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,7 +20,7 @@ from typing import Optional
 
 import numpy as np
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -26,7 +32,7 @@ WEB_DIR = Path(__file__).resolve().parent.parent.parent / "web"
 CACHE_DIR = Path(os.environ.get("SUNDIAL_CACHE", os.path.join(tempfile.gettempdir(), "sundial-web")))
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-CACHE_VERSION = "11"  # bump when the geometry changes so cached results are rebuilt
+CACHE_VERSION = "12"  # bump when the geometry changes so cached results are rebuilt
 
 app = FastAPI(title="Bernhardt sundial generator", version="1.0")
 
@@ -43,6 +49,19 @@ class GenerateRequest(BaseModel):
     hour_first: Optional[int] = Field(None, ge=1, le=11)
     hour_last: Optional[int] = Field(None, ge=13, le=23)
     engrave: bool = True
+    place_name: str = Field("", max_length=120)   # for the zip name and the readme, not engraved
+    tz_name: str = Field("", max_length=64)       # IANA zone, so the viewer can show "now" with summer time
+
+
+def _slug(text: str) -> str:
+    import unicodedata
+    t = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    t = re.sub(r"[^A-Za-z0-9]+", "-", t).strip("-").lower()
+    return t[:40] or "sundial"
+
+
+PLA_DENSITY = 1.24   # g/cm3
+BEDS_MM = (180, 220, 250, 300, 350, 400)
 
 
 def _timezone_info(lat: float, lon: float):
@@ -94,6 +113,61 @@ def api_sun(lat: float, lon: float, utc_offset_h: float, year: int, month: int, 
     return {"hours": hours.tolist(), "enu": np.round(v, 5).tolist()}
 
 
+_design_cache: dict = {}
+_design_lock = threading.Lock()
+
+
+@app.get("/api/design")
+def api_design(lat: float, lon: float, utc_offset_h: float, year: int = 2026, scale_radius: float = 75.0,
+               min_roller_radius: float = 4.0, hour_first: Optional[int] = None, hour_last: Optional[int] = None):
+    """The dial's facts without any meshing: hour range, longest day, roller
+    radii, accuracy.  Takes a few seconds, cached in memory."""
+    key = json.dumps([round(lat, 4), round(lon, 4), utc_offset_h, year, scale_radius, min_roller_radius, hour_first, hour_last])
+    with _design_lock:
+        hit = _design_cache.get(key)
+    if hit:
+        return hit
+    p = DesignParams(lat=lat, lon=lon, utc_offset_h=utc_offset_h, year=year, scale_radius=scale_radius,
+                     min_roller_radius=min_roller_radius, hour_first=hour_first, hour_last=hour_last)
+    d = build_design(p)
+    out = {
+        "hour_first": d.hour_first, "hour_last": d.hour_last,
+        "sunrise_earliest": d.sunrise_earliest, "sunset_latest": d.sunset_latest,
+        "roller_r_min": d.min_roller_r, "roller_r_max": d.max_roller_r,
+        "roller_z_min": float(min(r.z.min() for r in d.rollers)), "roller_z_max": float(max(r.z.max() for r in d.rollers)),
+        "tilt_deg": abs(lat), "minute_ticks": d.R * math.pi / 720.0 >= 0.7,
+        "accuracy": accuracy_report(d, 1.0),
+        "profiles": _profiles(d),
+        "warnings": _warnings(lat, scale_radius, d),
+    }
+    with _design_lock:
+        if len(_design_cache) > 200:
+            _design_cache.clear()
+        _design_cache[key] = out
+    return out
+
+
+def _profiles(d):
+    return {rp.name: {"z": np.round(np.interp(np.linspace(0, 1, 120), np.linspace(0, 1, len(rp.z)), rp.z), 3).tolist(),
+                      "r": np.round(np.interp(np.linspace(0, 1, 120), np.linspace(0, 1, len(rp.r)), rp.r), 3).tolist()}
+            for rp in d.rollers}
+
+
+def _warnings(lat, scale_radius, d):
+    warnings = []
+    if abs(lat) < 27:
+        warnings.append("Below about 27 degrees latitude the winter sun no longer stays on the open side of the crescent, so winter readings get shadowed by the dial body. The design is meant for 27 to 66 degrees.")
+    elif abs(lat) < 35:
+        warnings.append("Low latitude: the stand is tall and the early/late hours are shadowed for a few weeks around the equinoxes.")
+    if abs(lat) > 66:
+        warnings.append("Inside the polar circle the hour range is clamped to 3 to 21.")
+    if scale_radius < 60:
+        warnings.append("Small dial: the equation-of-time bulge on the roller is only a few millimetres, expect about 5 minute accuracy.")
+    if d.params.hour_first is not None and (d.params.hour_first > math.floor(d.sunrise_earliest) or d.params.hour_last < math.ceil(d.sunset_latest)):
+        warnings.append("Manual hour range is narrower than the summer day at this location.")
+    return warnings
+
+
 def build_design_light(p: DesignParams):
     # sun_table only needs the params, avoid the full design
     class _D:  # minimal duck type
@@ -130,21 +204,39 @@ def _assembly(d, parts):
             "dial_centre_enu": centre_enu.tolist()}
 
 
-def generate(req: GenerateRequest):
-    key = hashlib.sha1((CACHE_VERSION + json.dumps(req.model_dump(), sort_keys=True)).encode()).hexdigest()[:16]
+def _cache_key(req: GenerateRequest) -> str:
+    geo = req.model_dump(exclude={"place_name", "tz_name"})   # names change no geometry
+    return hashlib.sha1((CACHE_VERSION + json.dumps(geo, sort_keys=True)).encode()).hexdigest()[:16]
+
+
+def _cached(req: GenerateRequest):
+    meta_path = CACHE_DIR / _cache_key(req) / "info.json"
+    if meta_path.exists():
+        return json.loads(meta_path.read_text())
+    return None
+
+
+STAGES = ("design", "dial", "roller_1", "roller_2", "stand", "export")
+
+
+def generate(req: GenerateRequest, progress=None):
+    key = _cache_key(req)
     out = CACHE_DIR / key
     meta_path = out / "info.json"
     if meta_path.exists():
         return json.loads(meta_path.read_text())
     out.mkdir(parents=True, exist_ok=True)
+    tell = progress or (lambda stage: None)
+    tell("design")
 
     p = DesignParams(lat=req.lat, lon=req.lon, utc_offset_h=req.utc_offset_h, year=req.year, summer_label=req.summer_label,
                      scale_radius=req.scale_radius, min_roller_radius=req.min_roller_radius,
                      hour_first=req.hour_first, hour_last=req.hour_last,
                      zone_label=req.zone_label.strip())
     d = build_design(p)
-    parts = build_all(d, engrave=req.engrave)
+    parts = build_all(d, engrave=req.engrave, progress=tell)
     g: BodyGeometry = parts["geometry"]
+    tell("export")
 
     files = {}
     stl_names = {}
@@ -158,26 +250,28 @@ def generate(req: GenerateRequest):
     for k, fn in stl_names.items():
         files[k] = f"/api/files/{key}/{fn}"
 
-    bounds = {k: parts[k].bounds.tolist() for k in ("dial", "stand")}
-    for name, mesh, inf in parts["rollers"]:
-        bounds[name] = mesh.bounds.tolist()
-
-    warnings = []
-    if abs(req.lat) < 27:
-        warnings.append("Below about 27 degrees latitude the winter sun no longer stays on the open side of the crescent, so winter readings get shadowed by the dial body. The design is meant for 27 to 66 degrees.")
-    elif abs(req.lat) < 35:
-        warnings.append("Low latitude: the stand is tall and the early/late hours are shadowed for a few weeks around the equinoxes.")
-    if abs(req.lat) > 66:
-        warnings.append("Inside the polar circle the hour range is clamped to 3 to 21.")
-    if req.scale_radius < 60:
-        warnings.append("Small dial: the equation-of-time bulge on the roller is only a few millimetres, expect about 5 minute accuracy.")
-    if d.params.hour_first is not None and (d.params.hour_first > math.floor(d.sunrise_earliest) or d.params.hour_last < math.ceil(d.sunset_latest)):
-        warnings.append("Manual hour range is narrower than the summer day at this location.")
+    meshes = {"dial": parts["dial"], "stand": parts["stand"], **{name: mesh for name, mesh, inf in parts["rollers"]}}
+    bounds = {k: m.bounds.tolist() for k, m in meshes.items()}
+    # print facts per part: the meshes are already in print orientation
+    # (dial scale side up, rollers pin down, stand plate down)
+    part_facts = {}
+    for k, m in meshes.items():
+        ext = (m.bounds[1] - m.bounds[0]).tolist()
+        vol = float(abs(m.volume)) / 1000.0
+        part_facts[k] = {"size_mm": [round(x, 1) for x in ext], "volume_cm3": round(vol, 1),
+                         "weight_g": round(vol * PLA_DENSITY), "footprint_mm": round(max(ext[0], ext[1]), 1)}
+    largest = max(f["footprint_mm"] for f in part_facts.values())
+    bed_mm = next((b for b in BEDS_MM if b >= largest + 10), BEDS_MM[-1])
+    warnings = _warnings(req.lat, req.scale_radius, d)
+    zip_name = f"sundial-{_slug(req.place_name) if req.place_name else _slug(location_text_short(req.lat, req.lon))}-{int(round(2 * d.R))}mm.zip"
 
     info = {
         "id": key,
         "files": files,
         "zip": f"/api/files/{key}/sundial.zip",
+        "zip_name": zip_name,
+        "parts": part_facts,
+        "bed_mm": bed_mm,
         "params": req.model_dump(),
         "design": {
             "omega": d.omega,
@@ -207,9 +301,7 @@ def generate(req: GenerateRequest):
         "bounds": bounds,
         "assembly": _assembly(d, parts),
         "accuracy": accuracy_report(d, 1.0),
-        "profiles": {rp.name: {"z": np.round(np.interp(np.linspace(0, 1, 120), np.linspace(0, 1, len(rp.z)), rp.z), 3).tolist(),
-                               "r": np.round(np.interp(np.linspace(0, 1, 120), np.linspace(0, 1, len(rp.r)), rp.r), 3).tolist()}
-                     for rp in d.rollers},
+        "profiles": _profiles(d),
         "shadowed": shadowed_days_report(d, g, parts["dial_info"]["surface"]),
         "continuity": continuity_report(parts),
         "warnings": warnings,
@@ -235,8 +327,9 @@ def _readme(info):
     summer_note = (f"  The outer row of numerals is standard time ({zone}); the inner row is summer\n  time ({p['summer_label']})."
                    if p.get("summer_label") else "  The scale shows standard time; this zone keeps no summer time.")
     pole = "north" if p["lat"] >= 0 else "south"
+    place = (p.get("place_name") or "").strip()
     return f"""Bernhardt precision sundial, generated for
-  latitude {p['lat']:.4f}, longitude {p['lon']:.4f}, zone {zone}
+  {place + chr(10) + "  " if place else ""}latitude {p['lat']:.4f}, longitude {p['lon']:.4f}, zone {zone}
   reading circle radius {d['scale_radius']:.1f} mm, hours {d['hour_first']} to {d['hour_last']}
 
 Parts
@@ -274,23 +367,184 @@ Accuracy
 """
 
 
+def location_text_short(lat, lon):
+    return f"{abs(lat):.2f}{'N' if lat >= 0 else 'S'}-{abs(lon):.2f}{'E' if lon >= 0 else 'W'}"
+
+
+# ---------------------------------------------------------------- jobs
+# One worker thread builds dials in order; the browser follows a job by
+# server-sent events.  Stage durations of the last builds give the estimate
+# the progress bar moves on between events.
+
+_jobs: dict = {}
+_job_queue: "queue.Queue[str]" = queue.Queue()
+_jobs_lock = threading.Lock()
+_worker_started = False
+
+
+def _timings_path():
+    return CACHE_DIR / "timings.json"
+
+
+def _load_timings():
+    try:
+        return json.loads(_timings_path().read_text())
+    except Exception:
+        return []
+
+
+def stage_estimates():
+    """Median seconds per stage over the last ten builds, with defaults for
+    a fresh server."""
+    est = {"design": 4.0, "dial": 25.0, "roller_1": 6.0, "roller_2": 6.0, "stand": 20.0, "export": 2.0}
+    runs = _load_timings()[-10:]
+    for st in STAGES:
+        vals = [r[st] for r in runs if st in r]
+        if vals:
+            est[st] = round(statistics.median(vals), 1)
+    return est
+
+
+def _record_timings(marks):
+    """marks: list of (stage, t_start); the last stage ends at now."""
+    durs = {}
+    for i, (st, t0) in enumerate(marks):
+        t1 = marks[i + 1][1] if i + 1 < len(marks) else time.time()
+        durs[st] = round(t1 - t0, 2)
+    runs = _load_timings()[-19:] + [durs]
+    try:
+        _timings_path().write_text(json.dumps(runs))
+    except Exception:
+        pass
+
+
+def _worker():
+    while True:
+        jid = _job_queue.get()
+        with _jobs_lock:
+            job = _jobs.get(jid)
+        if not job:
+            continue
+        marks = []
+
+        def progress(stage):
+            marks.append((stage, time.time()))
+            with _jobs_lock:
+                job["stage"] = stage
+                job["stage_started"] = time.time()
+                job["done_stages"] = [m[0] for m in marks[:-1]]
+        with _jobs_lock:
+            job["status"] = "running"; job["started"] = time.time()
+        try:
+            info = generate(job["req"], progress)
+            _record_timings(marks)
+            with _jobs_lock:
+                job["status"] = "done"; job["info"] = info; job["done_stages"] = list(STAGES); job["stage"] = None
+        except Exception as exc:
+            with _jobs_lock:
+                job["status"] = "failed"; job["error"] = f"generation failed: {exc}"
+        finally:
+            with _jobs_lock:
+                job["finished"] = time.time()
+
+
+def _ensure_worker():
+    global _worker_started
+    with _jobs_lock:
+        if _worker_started:
+            return
+        _worker_started = True
+    threading.Thread(target=_worker, name="sundial-builder", daemon=True).start()
+
+
+def _job_view(jid):
+    with _jobs_lock:
+        job = _jobs.get(jid)
+        if not job:
+            return None
+        ahead = 0
+        if job["status"] == "queued":
+            ahead = sum(1 for j in _jobs.values() if j["status"] == "queued" and j["created"] < job["created"])
+            ahead += sum(1 for j in _jobs.values() if j["status"] == "running")
+        view = {"job": jid, "status": job["status"], "stage": job.get("stage"), "done_stages": job.get("done_stages", []),
+                "ahead": ahead, "stage_elapsed": round(time.time() - job["stage_started"], 1) if job.get("stage_started") else 0.0,
+                "error": job.get("error")}
+        if job["status"] == "done":
+            view["info"] = job["info"]
+        return view
+
+
+def _prune_jobs():
+    now = time.time()
+    with _jobs_lock:
+        for jid in [j for j, job in _jobs.items() if job.get("finished") and now - job["finished"] > 1800]:
+            del _jobs[jid]
+
+
 @app.post("/api/generate")
 def api_generate(req: GenerateRequest):
-    try:
-        return generate(req)
-    except Exception as exc:  # surface the reason to the UI
-        raise HTTPException(status_code=500, detail=f"generation failed: {exc}")
+    """Start (or find) a build.  Cached results come back at once as
+    {"cached": true, "info": ...}; otherwise {"cached": false, "job": id,
+    "estimates": {...}} and the job is followed on /api/jobs/{id}."""
+    hit = _cached(req)
+    if hit:
+        return {"cached": True, "info": hit}
+    _prune_jobs()
+    _ensure_worker()
+    with _jobs_lock:
+        for jid, job in _jobs.items():   # same dial already queued or building: join it
+            if job["status"] in ("queued", "running") and job["key"] == _cache_key(req):
+                return {"cached": False, "job": jid, "estimates": stage_estimates(), "stages": STAGES}
+        jid = uuid.uuid4().hex[:12]
+        _jobs[jid] = {"req": req, "key": _cache_key(req), "status": "queued", "created": time.time(), "done_stages": []}
+    _job_queue.put(jid)
+    return {"cached": False, "job": jid, "estimates": stage_estimates(), "stages": STAGES}
+
+
+@app.get("/api/jobs/{jid}")
+def api_job(jid: str):
+    view = _job_view(jid)
+    if not view:
+        raise HTTPException(404, "no such job")
+    return view
+
+
+@app.get("/api/jobs/{jid}/events")
+def api_job_events(jid: str):
+    """Server-sent events: one JSON status per line whenever it changes,
+    a heartbeat every two seconds, and the final status with the info."""
+    if not _job_view(jid):
+        raise HTTPException(404, "no such job")
+
+    def stream():
+        last = None
+        t_beat = time.time()
+        while True:
+            view = _job_view(jid)
+            if not view:
+                yield "event: gone\ndata: {}\n\n"
+                return
+            sig = (view["status"], view["stage"], view["ahead"])
+            if sig != last or time.time() - t_beat > 2.0:
+                last = sig; t_beat = time.time()
+                yield "data: " + json.dumps(view) + "\n\n"
+            if view["status"] in ("done", "failed"):
+                return
+            time.sleep(0.4)
+    return StreamingResponse(stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.get("/api/files/{key}/{name}")
-def api_file(key: str, name: str):
+def api_file(key: str, name: str, download_name: str = ""):
     if not (key.isalnum() and name.replace(".", "").replace("_", "").isalnum()):
         raise HTTPException(404)
     path = CACHE_DIR / key / name
     if not path.exists():
         raise HTTPException(404)
     media = "application/zip" if name.endswith(".zip") else "model/stl"
-    return FileResponse(path, media_type=media, filename=name)
+    fname = _slug(download_name.rsplit(".", 1)[0]) + "." + name.rsplit(".", 1)[1] if download_name else name
+    return FileResponse(path, media_type=media, filename=fname)
 
 
 if WEB_DIR.exists():
