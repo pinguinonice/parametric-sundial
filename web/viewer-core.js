@@ -213,7 +213,12 @@ export function createStage(canvas) {
     camera.position.set(tgt.x + dist * Math.sin(a) * Math.cos(e), tgt.y + dist * Math.cos(a) * Math.cos(e), tgt.z + dist * Math.sin(e));
     controls.update();
   }
-  return { scene, camera, renderer, addPart, setInfo, setTime, setView, rollerForDate, get info() { return info; } };
+  // step the camera back or in along its line of sight (the exploded view needs more room)
+  function zoom(factor) {
+    const off = camera.position.clone().sub(controls.target).multiplyScalar(factor);
+    camera.position.copy(controls.target).add(off); controls.update();
+  }
+  return { scene, camera, renderer, addPart, setInfo, setTime, setView, zoom, rollerForDate, get info() { return info; } };
 }
 
 // ---------- figures --------------------------------------------------------

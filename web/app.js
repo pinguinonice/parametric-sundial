@@ -440,6 +440,7 @@ function sweepIn() {
   state.sweep = requestAnimationFrame(tick);
 }
 for (const id of ['simTime', 'simDate', 'rollerSel', 'explode']) $(id).addEventListener('input', () => { if (id !== 'explode' && id !== 'rollerSel') state.moment = null; update(); });
+$('explode').addEventListener('change', () => stage.zoom($('explode').checked ? 1.4 : 1 / 1.4));
 for (const b of document.querySelectorAll('#chips .chip')) b.addEventListener('click', () => {
   if (b.dataset.when) { goTo(b.dataset.when); return; }
   const year = state.info ? state.info.params.year : +$('year').value;
