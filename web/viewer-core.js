@@ -60,7 +60,7 @@ export function wallClock(tzName, unix = Date.now() / 1000) {
 // the sun is still up in the engraved hours, otherwise the next morning (or,
 // in polar night, the first day the sun returns).
 export function nextLightMoment(params, design, from) {
-  const up = (y, mo, d, mins) => sunENU(zoneUnix(y, mo, d, mins / 60, params.utc_offset_h), params.lat, params.lon)[2] > 0.005;
+  const up = (y, mo, d, mins) => sunENU(zoneUnix(y, mo, d, mins / 60, params.utc_offset_h), params.lat, params.lon)[2] > 0.087;   // sun at least 5 degrees up, so the dial is lit
   const first = design.hour_first * 60, last = design.hour_last * 60;
   if (from.mins >= first && from.mins <= last && up(from.y, from.mo, from.d, from.mins)) return { ...from, today: true };
   let day = Date.UTC(from.y, from.mo - 1, from.d);
