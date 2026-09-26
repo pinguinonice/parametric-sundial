@@ -168,9 +168,11 @@ function sunShadow(r) {
 }
 
 // the last dial anyone made, as the opening picture; the sun loops through its day
-async function loadHero() {
+async function loadHero(attempt = 0) {
   try {
-    const r = await fetch('/api/latest'); if (!r.ok) return;
+    const r = await fetch('/api/latest');
+    if (r.status === 404 && attempt < 6) { setTimeout(() => loadHero(attempt + 1), 20000); return; }   // a fresh server is still making its first dial
+    if (!r.ok) return;
     const { age_s, info } = await r.json();
     if (state.info) return;   // the visitor's own dial arrived first
     $('heroSlot').prepend($('stage')); $('heroSlot').hidden = false;

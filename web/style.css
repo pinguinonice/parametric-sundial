@@ -18,12 +18,13 @@ body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.6 var(--body)
 @media (min-width:700px){.wrap{padding-inline:24px}}
 .prose{max-width:64ch}
 h1,h2,h3{font-family:var(--display);font-weight:600;letter-spacing:-.01em;text-wrap:balance;margin:0}
-h1{font-size:clamp(34px,7vw,64px);line-height:1.02}
+h1{font-size:clamp(30px,7vw,64px);line-height:1.02}
 h2{font-size:clamp(28px,4vw,42px);line-height:1.08;margin-bottom:10px}
 h3{font-size:22px;margin-bottom:6px}
 p{margin:0 0 14px}
 [hidden]{display:none!important}
-.lede{font-size:19px;line-height:1.5;color:var(--ink-2);max-width:60ch}
+.lede{font-size:17px;line-height:1.5;color:var(--ink-2);max-width:60ch}
+@media (min-width:700px){.lede{font-size:19px}}
 .eyebrow{font:600 12px/1 var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--brass);margin-bottom:12px}
 a{color:var(--brass-deep)} a:hover{color:var(--brass)}
 :focus-visible{outline:2px solid var(--brass);outline-offset:2px;border-radius:4px}
