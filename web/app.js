@@ -235,6 +235,7 @@ function startMaking(body) {
   $('makingPlace').textContent = state.place?.name || `${fmtDeg(body.lat, 'N', 'S')}, ${fmtDeg(body.lon, 'E', 'W')}`;
   showBeat('making', true); showBeat('today', false); showBeat('home', false);
   $('failBox').hidden = true; $('barFill').style.width = '0%'; $('stageNote').textContent = '';
+  $('stages').hidden = false; document.querySelector('#making .bar').hidden = false;
   $('makingFacts').innerHTML = '';
   $('making').scrollIntoView({ behavior: 'smooth', block: 'start' });
   // facts and figures come from the fast design call while the meshes build
@@ -298,7 +299,7 @@ async function generate(bodyOverride) {
   startMaking(body);
   try {
     const r = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Sundial-Session': SESSION_ID }, body: JSON.stringify(body) });
-    if (r.status === 429) throw new Error(t('stBusy', { e: (await r.json()).detail }));
+    if (r.status === 429) { const e = new Error(t('stBusy', { e: (await r.json()).detail })); e.plain = true; throw e; }
     if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
     const start = await r.json();
     if (start.cached) {
@@ -310,7 +311,7 @@ async function generate(bodyOverride) {
       session.set('sundial-job', { id: start.job, body });
       await followJob(start.job, start.estimates, start.stages, body);
     }
-  } catch (e) { fail(e.message, body); }
+  } catch (e) { fail(e.message, body, e.plain); }
   finally { btn.disabled = false; }
 }
 function followJob(jid, estimates, stages, body) {
@@ -355,8 +356,10 @@ function followJob(jid, estimates, stages, body) {
     }
   });
 }
-function fail(msg, body) {
-  $('failText').textContent = t('stError', { e: msg });
+function fail(msg, body, plain = false) {
+  $('failText').textContent = plain ? msg : t('stError', { e: msg.replace(/^generation failed:\s*/i, '') });
+  const started = $('stages').children.length > 0;
+  $('stages').hidden = !started; document.querySelector('#making .bar').hidden = !started;
   $('failBox').hidden = false; $('stageNote').textContent = '';
   $('retryBtn').onclick = () => generate(body);
   $('smallerBtn').onclick = () => { $('dia').value = Math.max(80, Math.round(body.scale_radius * 2 * 0.8 / 5) * 5); hints(); generate(); };

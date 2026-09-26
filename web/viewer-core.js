@@ -188,7 +188,7 @@ export function createStage(canvas) {
     for (const [name, mesh] of Object.entries(parts)) {
       mesh.visible = !(name.startsWith('roller') && name !== roller);
       mesh.matrix.copy(mesh.userData.base);
-      if (explode) { const k = name === 'dial' ? 1 : name.startsWith('roller') ? 2.2 : 0; mesh.matrix.premultiply(new THREE.Matrix4().makeTranslation(axis.x * 70 * k, axis.y * 70 * k, axis.z * 70 * k)); }
+      if (explode) { const k = name === 'dial' ? 1 : name.startsWith('roller') ? 1.9 : 0; const e = des.outer_radius * 0.55; mesh.matrix.premultiply(new THREE.Matrix4().makeTranslation(axis.x * e * k, axis.y * e * k, axis.z * e * k)); }
     }
     const psi = (des.psi_noon_deg + des.omega * 15 * (mins / 60 - 12)) * DEG;
     dot.position.set(des.scale_radius * Math.sin(psi), des.scale_radius * Math.cos(psi), 0).applyMatrix4(M4(info.assembly.dial_to_world));
