@@ -106,8 +106,8 @@ export function createStage(canvas) {
   const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.49; controls.minDistance = 120; controls.maxDistance = 900;
   canvas.style.touchAction = 'pan-y';   // a vertical swipe still scrolls the page past the viewer; a sideways drag orbits
-  scene.add(new THREE.HemisphereLight(0xfff8ee, 0x9a9184, 0.75));   // sky and a warm ground bounce so undersides read
-  const sun = new THREE.DirectionalLight(0xfff1d6, 2.6);
+  scene.add(new THREE.HemisphereLight(0xfff8ee, 0x9a9184, 0.36));   // low fill so the roller's shadow on the face reads dark   // sky and a warm ground bounce so undersides read
+  const sun = new THREE.DirectionalLight(0xfff1d6, 3.2);
   sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
   Object.assign(sun.shadow.camera, { left: -230, right: 230, top: 230, bottom: -230, near: 10, far: 1600 });
   sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.03; sun.shadow.radius = 3;
@@ -119,7 +119,7 @@ export function createStage(canvas) {
   grad.addColorStop(0, '#8e8679'); grad.addColorStop(0.7, '#7d7569'); grad.addColorStop(1, '#6b6459');
   gx.fillStyle = grad; gx.fillRect(0, 0, 512, 512);
   const gtex = new THREE.CanvasTexture(gc); gtex.colorSpace = THREE.SRGBColorSpace;
-  const ground = new THREE.Mesh(new THREE.CircleGeometry(520, 96), new THREE.MeshStandardMaterial({ map: gtex, roughness: 0.95, metalness: 0 }));
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(520, 96), new THREE.MeshStandardMaterial({ map: gtex, roughness: 0.95, metalness: 0, envMapIntensity: 0.4 }));
   ground.receiveShadow = true; ground.position.z = -0.05; scene.add(ground);
   const north = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0.3), new THREE.Vector3(0, 175, 0.3)]),
     new THREE.LineBasicMaterial({ color: 0xb4842a }));
@@ -132,9 +132,9 @@ export function createStage(canvas) {
   const sunBall = new THREE.Mesh(new THREE.SphereGeometry(7, 20, 20), new THREE.MeshBasicMaterial({ color: 0xffd36a })); sunBall.visible = false; scene.add(sunBall);
 
   const materials = {
-    dial: () => new THREE.MeshStandardMaterial({ color: 0xd8d2c4, roughness: 0.62, metalness: 0.05 }),
-    roller: () => new THREE.MeshStandardMaterial({ color: 0xc89b46, roughness: 0.32, metalness: 0.75 }),
-    stand: () => new THREE.MeshStandardMaterial({ color: 0x4b4d52, roughness: 0.7, metalness: 0.15 }),
+    dial: () => new THREE.MeshStandardMaterial({ color: 0xd8d2c4, roughness: 0.62, metalness: 0.05, envMapIntensity: 0.28 }),
+    roller: () => new THREE.MeshStandardMaterial({ color: 0xc89b46, roughness: 0.32, metalness: 0.75, envMapIntensity: 0.9 }),
+    stand: () => new THREE.MeshStandardMaterial({ color: 0x4b4d52, roughness: 0.7, metalness: 0.15, envMapIntensity: 0.45 }),
   };
   const parts = {};
   let info = null;
@@ -182,7 +182,7 @@ export function createStage(canvas) {
     sunBall.position.set(c[0] + v[0] * 420, c[1] + v[1] * 420, c[2] + v[2] * 420);
     const elev = Math.asin(v[2]) / DEG, az = (Math.atan2(v[0], v[1]) / DEG + 360) % 360;
     const up = elev > 0;
-    sun.intensity = up ? 2.6 * Math.min(1, elev / 8) : 0; sunBall.visible = up;
+    sun.intensity = up ? 3.2 * Math.min(1, elev / 8) : 0; sunBall.visible = up;
     const roller = rollerChoice === 'auto' ? rollerForDate(mo, d) : rollerChoice;
     const axis = new THREE.Vector3(...info.assembly.dial_to_world.map((r) => r[2]).slice(0, 3));
     for (const [name, mesh] of Object.entries(parts)) {
