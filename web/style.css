@@ -217,7 +217,7 @@ footer{padding:36px 0 0;color:var(--muted);font-size:14px;border-top:1px solid v
 
 /* static preview (no server) */
 .demo-only{display:none}
-html.static .generator-only,html.static #where{display:none!important}
+html.static .generator-only,html.static #where,html.static #historyBtn{display:none!important}
 html.static .demo-only{display:block}
 html.static #today{display:block!important}
 
