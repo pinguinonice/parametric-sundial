@@ -4,3 +4,4 @@ __pycache__/
 .pytest_cache/
 sundial_out/
 *.egg-info/
+.venv/

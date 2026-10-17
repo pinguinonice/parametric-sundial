@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+numpy
+scipy
+pysolar
+pymap3d
+pytz
+timezonefinder
+python-dateutil
+numpy-stl

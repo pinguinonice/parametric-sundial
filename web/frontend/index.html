@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Parametric Sundial</title>
+<link rel="stylesheet" href="./styles.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='14' font-size='14'%3E%F0%9F%95%B0%EF%B8%8F%3C/text%3E%3C/svg%3E" />
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app">
+  <aside id="panel">
+    <h1>🕰️ Parametric Sundial</h1>
+    <p class="sub">Bernhardt-cylinder dial for your location, previewed with the live sun.</p>
+
+    <section>
+      <h2>Location</h2>
+      <button id="geo" class="wide">Use my location</button>
+      <div class="grid2">
+        <label>Latitude<input id="lat" type="number" step="0.0001" value="48.7758" /></label>
+        <label>Longitude<input id="lon" type="number" step="0.0001" value="9.1829" /></label>
+        <label>Altitude (m)<input id="alt" type="number" step="1" value="300" /></label>
+      </div>
+      <p id="geoStatus" class="status"></p>
+    </section>
+
+    <section>
+      <h2>Dial</h2>
+      <div class="grid2">
+        <label>Scale radius (mm)<input id="radius" type="number" step="1" min="10" value="100" /></label>
+        <label>Season
+          <select id="season">
+            <option value="fall">fall · 21 Jun – 21 Dec</option>
+            <option value="spring">spring · 21 Dec – 21 Jun</option>
+          </select>
+        </label>
+      </div>
+      <label>Noon offset <span id="noonVal" class="tag">0°</span>
+        <input id="noonOffset" type="range" min="-45" max="45" step="1" value="0" />
+      </label>
+      <button id="generate" class="wide primary">Generate dial</button>
+      <p id="genStatus" class="status"></p>
+    </section>
+
+    <section>
+      <h2>Sun preview</h2>
+      <div class="grid2">
+        <label>Date<input id="date" type="date" /></label>
+        <button id="nowBtn" class="self-end">Now</button>
+      </div>
+      <label>Time of day <span id="timeVal" class="tag">12:00</span>
+        <input id="time" type="range" min="0" max="1435" step="5" value="720" />
+      </label>
+      <button id="play" class="wide">▶ Animate day</button>
+      <ul class="readout">
+        <li>Sun elevation <b id="rElev">–</b></li>
+        <li>Sun azimuth <b id="rAzi">–</b></li>
+        <li>Dial reads <b id="rTime">–</b></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Print</h2>
+      <button id="stl" class="wide">⬇ Download STL</button>
+      <p class="status">Watertight mesh in mm — roller, axis rod and scale ring.</p>
+    </section>
+
+    <footer>Model: <code>generateSundial()</code> ·
+      <a href="https://de.wikipedia.org/wiki/Bernhardtsche_Walze" target="_blank" rel="noopener">Bernhardtsche Walze</a>
+    </footer>
+  </aside>
+
+  <main id="stage">
+    <canvas id="view"></canvas>
+    <div id="hint">Set a location and hit <b>Generate dial</b>.</div>
+    <div id="spinner" hidden><div class="dot"></div>Computing sun geometry…</div>
+  </main>
+</div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>
